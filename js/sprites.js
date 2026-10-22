@@ -33,6 +33,11 @@ const Sprites = {
     this.cache['trees'] = this.renderHDFoliageTile();
     this.cache['ice'] = this.renderHDIceTile();
 
+    // Conquest ground per land type (seamless, one 16px tile each)
+    ['grass', 'sand', 'snow', 'cobble', 'dirt'].forEach(kind => {
+      this.cache['ground_' + kind] = this.renderGroundTile(kind);
+    });
+
     // 2. Base Phoenix / Eagle Monuments (64x64 high-res, drawn at 32x32 logical)
     this.cache['eagle_alive'] = this.renderHDEagle(false);
     this.cache['eagle_dead'] = this.renderHDEagle(true);
@@ -93,6 +98,91 @@ const Sprites = {
     ctx.lineTo(x, y + r);
     ctx.quadraticCurveTo(x, y, x + r, y);
     ctx.closePath();
+  },
+
+  // -------------------------------------------------------------
+  // GROUND for the conquest march: grass, sand, snow, cobblestone, dirt.
+  // Dark and low-contrast so tanks, walls and shells stay easy to read.
+  // -------------------------------------------------------------
+  renderGroundTile(kind) {
+    const { canvas, ctx } = this.makeTileCanvas();
+    const rnd = this.seededRandom({ grass: 11, sand: 22, snow: 33, cobble: 44, dirt: 55 }[kind] || 1);
+    const base = { grass: '#1c3319', sand: '#3a3222', snow: '#5b6772', cobble: '#262a30', dirt: '#2c241c' }[kind];
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, 32, 32);
+
+    // Blotches drawn with wrap-around so neighbouring tiles join seamlessly
+    const blot = (x, y, r, color) => {
+      [-32, 0, 32].forEach(ox => [-32, 0, 32].forEach(oy => {
+        const g = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+        g.addColorStop(0, color);
+        g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
+      }));
+    };
+
+    if (kind === 'grass') {
+      for (let i = 0; i < 6; i++) blot(rnd() * 32, rnd() * 32, 6 + rnd() * 6, rnd() < 0.5 ? 'rgba(60, 100, 40, 0.35)' : 'rgba(10, 25, 10, 0.4)');
+      ctx.lineWidth = 0.5;
+      for (let i = 0; i < 40; i++) {
+        const x = rnd() * 32;
+        const y = rnd() * 32;
+        ctx.strokeStyle = rnd() < 0.6 ? 'rgba(110, 160, 70, 0.45)' : 'rgba(40, 70, 30, 0.6)';
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + (rnd() - 0.5) * 1.5, y - 1.5 - rnd() * 1.5);
+        ctx.stroke();
+      }
+    } else if (kind === 'sand') {
+      for (let i = 0; i < 6; i++) blot(rnd() * 32, rnd() * 32, 7 + rnd() * 6, rnd() < 0.5 ? 'rgba(120, 100, 60, 0.3)' : 'rgba(20, 15, 8, 0.35)');
+      // Wind ripples
+      ctx.strokeStyle = 'rgba(150, 125, 80, 0.25)';
+      ctx.lineWidth = 0.6;
+      for (let y = 3; y < 32; y += 6) {
+        ctx.beginPath();
+        for (let x = -1; x <= 33; x += 2) {
+          const yy = y + Math.sin((x / 32) * Math.PI * 4 + y) * 0.9;
+          if (x === -1) ctx.moveTo(x, yy);
+          else ctx.lineTo(x, yy);
+        }
+        ctx.stroke();
+      }
+      for (let i = 0; i < 50; i++) {
+        ctx.fillStyle = rnd() < 0.5 ? 'rgba(170, 145, 95, 0.35)' : 'rgba(15, 10, 5, 0.35)';
+        ctx.fillRect(rnd() * 32, rnd() * 32, 0.5, 0.5);
+      }
+    } else if (kind === 'snow') {
+      for (let i = 0; i < 7; i++) blot(rnd() * 32, rnd() * 32, 6 + rnd() * 7, rnd() < 0.5 ? 'rgba(200, 220, 240, 0.25)' : 'rgba(40, 55, 75, 0.3)');
+      for (let i = 0; i < 40; i++) {
+        ctx.fillStyle = `rgba(235, 245, 255, ${0.25 + rnd() * 0.35})`;
+        ctx.fillRect(rnd() * 32, rnd() * 32, 0.6, 0.6);
+      }
+    } else if (kind === 'cobble') {
+      // Rounded stones in staggered rows (two rows per 16 logical px)
+      for (let row = 0; row < 4; row++) {
+        const y = row * 8;
+        const shift = row % 2 ? 4 : 0;
+        for (let col = -1; col < 4; col++) {
+          const x = col * 8 + shift;
+          const shade = 38 + Math.floor(rnd() * 16);
+          ctx.fillStyle = `rgb(${shade}, ${shade + 3}, ${shade + 8})`;
+          this.roundRectPath(ctx, x + 0.6, y + 0.6, 6.8, 6.8, 2);
+          ctx.fill();
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+          ctx.fillRect(x + 1.4, y + 1.2, 4.5, 0.6);
+        }
+      }
+    } else { // dirt
+      for (let i = 0; i < 7; i++) blot(rnd() * 32, rnd() * 32, 5 + rnd() * 7, rnd() < 0.5 ? 'rgba(90, 70, 45, 0.35)' : 'rgba(10, 6, 3, 0.4)');
+      for (let i = 0; i < 18; i++) {
+        ctx.fillStyle = rnd() < 0.5 ? 'rgba(110, 95, 75, 0.45)' : 'rgba(15, 10, 6, 0.5)';
+        ctx.beginPath();
+        ctx.arc(rnd() * 32, rnd() * 32, 0.4 + rnd() * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    return canvas;
   },
 
   // -------------------------------------------------------------

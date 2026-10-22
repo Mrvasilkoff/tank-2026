@@ -84,7 +84,7 @@ const MapGenerator = {
     conquest: {
       cols: 26, rows: 78, viewRows: 26,
       bases: [],
-      playerSpawns: [{ x: 8, y: 74 }, { x: 16, y: 74 }],
+      playerSpawns: [{ x: 8, y: 74 }, { x: 16, y: 74 }, { x: 3, y: 74 }, { x: 21, y: 74 }],
       enemySpawns: [],
       maxOnScreen: 4,
       totalEnemies: 0,
@@ -584,11 +584,17 @@ const MapGenerator = {
       }
 
       let city = null;
-      if (index > 0 && rng() < (index === 1 ? 0.5 : 0.7)) city = this.buildCity(grid, rng, stage);
+      let citadel = null;
+      if (index >= 4 && index % 5 === 4) citadel = this.buildCitadel(grid, rng, stage); // Boss fortress
+      else if (index > 0 && rng() < (index === 1 ? 0.5 : 0.7)) city = this.buildCity(grid, rng, stage);
 
       if (!this.validateVerticalConnectivity(grid)) continue;
       const findCount = index === 0 ? 0 : (rng() < 0.6 ? 1 : 0) + (rng() < 0.25 ? 1 : 0);
-      return { grid, archetype, city, finds: this.pickFinds(grid, rng, city, findCount) };
+      return {
+        grid, archetype, city,
+        citadel, // { name, hqs: [city-like entries], turrets: [{x, y}] } or null
+        finds: this.pickFinds(grid, rng, city || (citadel && citadel.hqs[0]), findCount)
+      };
     }
     return { grid: this.createEmptyGrid(), archetype: 'SYMMETRICAL_FORTRESS', city: null, finds: [] };
   },
@@ -865,6 +871,68 @@ const MapGenerator = {
       garrison: Math.min(5, 2 + Math.floor(stage / 2)),
       hp: 5 + Math.min(5, stage)
     };
+  },
+
+  // Boss fortress: an outer wall across most of the chunk with gates top and bottom,
+  // two or three headquarters in their own walled yards, and gun turrets on the wall.
+  // The fortress falls only when every headquarters is destroyed.
+  buildCitadel(grid, rng, stage) {
+    const T = this.TILES;
+    const x0 = 1;
+    const x1 = 11;
+    const y0 = 2;
+    const y1 = 10;
+    for (let my = y0; my <= y1; my++) {
+      for (let mx = x0; mx <= x1; mx++) {
+        const border = mx === x0 || mx === x1 || my === y0 || my === y1;
+        let tile = T.EMPTY;
+        if (border) tile = stage >= 2 && (mx + my) % 3 === 0 ? T.STEEL : T.BRICK;
+        else if (rng() < 0.08) tile = T.TREES;
+        this.setMacroBlock(grid, mx, my, tile);
+      }
+    }
+    // Gates
+    this.setMacroBlock(grid, 6, y0, T.EMPTY);
+    this.setMacroBlock(grid, 6, y1, T.EMPTY);
+    this.setMacroBlock(grid, x0, 6, T.BRICK);
+    this.setMacroBlock(grid, x1, 6, T.BRICK);
+
+    const hqCells = stage >= 3 ? [[3, 6], [6, 4], [9, 6]] : [[4, 6], [8, 6]];
+    const name = this.cityName(rng);
+    const hqs = hqCells.map(([hmx, hmy]) => {
+      // Inner yard around each HQ, gate facing the middle of the fortress
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const towardCenter = (hmx < 6 && dx === 1 && dy === 0) || (hmx > 6 && dx === -1 && dy === 0) ||
+                               (hmx === 6 && dy === 1 && dx === 0);
+          this.setMacroBlock(grid, hmx + dx, hmy + dy, towardCenter ? T.EMPTY : (Math.abs(dx) === Math.abs(dy) && stage >= 2 ? T.STEEL : T.BRICK));
+        }
+      }
+      this.setMacroBlock(grid, hmx, hmy, T.EMPTY);
+      const spawns = [[0, 2], [2, 0], [-2, 0], [0, -2]]
+        .map(([dx, dy]) => ({ x: (hmx + dx) * 2, y: (hmy + dy) * 2 }))
+        .filter(s => s.x / 2 > x0 && s.x / 2 < x1 && s.y / 2 > y0 && s.y / 2 < y1);
+      spawns.forEach(s => this.setMacroBlock(grid, s.x / 2, s.y / 2, T.EMPTY));
+      return {
+        name,
+        template: 'citadel',
+        hq: { x: hmx * 2, y: hmy * 2 },
+        zone: { x: x0 * 2, y: y0 * 2, w: (x1 - x0 + 1) * 2, h: (y1 - y0 + 1) * 2 },
+        spawns,
+        garrison: 2,
+        hp: 6 + Math.min(6, stage)
+      };
+    });
+
+    // Turrets sit on wall cells (one per 32px cell); the cell under them is cleared
+    const turretCells = [[x0, y0], [x1, y0], [x0, y1], [x1, y1], [4, y1], [8, y1], [4, y0], [8, y0]]
+      .slice(0, 4 + Math.min(4, stage));
+    const turrets = turretCells.map(([mx, my]) => {
+      this.setMacroBlock(grid, mx, my, T.EMPTY);
+      return { x: mx * 2, y: my * 2 };
+    });
+    return { name, hqs, turrets };
   },
 
   // A path for tanks from the bottom edge of the chunk to its top edge

@@ -1249,3 +1249,13 @@ canvas#gameCanvas {
 .conquest-only .digit {
   font-size: 13px;
 }
+
+/* Conquest minimap */
+.minimap {
+  width: 52px;
+  height: 156px;
+  margin-bottom: 4px;
+  border: 1px solid #3a4352;
+  background: #0b0e13;
+  image-rendering: pixelated;
+}

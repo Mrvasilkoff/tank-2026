@@ -69,6 +69,7 @@ class GameMap {
     this.chunkArchetypes = [];
     this.newCities = [];
     this.newFinds = [];
+    this.newTurrets = [];
     chunks.forEach((chunk, i) => {
       chunk.grid.forEach(row => this.grid.push(row));
       this.chunkArchetypes.push(chunk.archetype);
@@ -90,6 +91,11 @@ class GameMap {
   // Cities and ground bonuses of a chunk, converted to world tile rows
   collectChunkContent(chunk, rowOffset) {
     if (chunk.city) this.newCities.push(Object.assign({}, chunk.city, { rowOffset }));
+    if (chunk.citadel) {
+      const group = 'g' + rowOffset + '-' + this.nextChunk; // Unique per fortress
+      chunk.citadel.hqs.forEach(h => this.newCities.push(Object.assign({}, h, { rowOffset, group, boss: true })));
+      chunk.citadel.turrets.forEach(t => this.newTurrets.push({ x: t.x, y: t.y + rowOffset, group }));
+    }
     chunk.finds.forEach(f => this.newFinds.push({ x: f.x, y: f.y + rowOffset }));
   }
 
@@ -108,6 +114,7 @@ class GameMap {
     this.chunkArchetypes = [chunk.archetype].concat(this.chunkArchetypes.slice(0, 2));
     this.newCities = [];
     this.newFinds = [];
+    this.newTurrets = [];
     this.collectChunkContent(chunk, 0);
     return MapGenerator.ROWS * this.tileSize;
   }
@@ -158,6 +165,9 @@ class GameMap {
       }
       for (const city of game.cities) {
         if (city.alive && x < city.x + 32 && x + w > city.x && y < city.y + 32 && y + h > city.y) return true;
+      }
+      for (const tu of game.turrets) {
+        if (tu.alive && x < tu.x + tu.w && x + w > tu.x && y < tu.y + tu.h && y + h > tu.y) return true;
       }
     }
 
@@ -623,6 +633,7 @@ const PLAYER_COLORS = [
 const MAX_PLAYERS = 4;
 const FRIENDLY_FIRE_FREEZE = 3.0; // Classic Battle City: shooting your partner paralyses them
 const VICTORY_DELAY = 5.0;        // Seconds the cleared field stays on screen before the tally
+const DAY_LENGTH = 180;           // Conquest: seconds for a full day and night
 
 // Player names (online play): up to 8 letters, digits, spaces or dashes
 function cleanPlayerName(name) {
@@ -667,6 +678,7 @@ class Game {
     // Conquest mode
     this.camY = 0;             // Top of the screen in world px (0 outside conquest)
     this.cities = [];
+    this.turrets = [];
     this.cityIdSeq = 0;
     this.worldShift = 0;
     this.distanceRows = 0;
@@ -1081,7 +1093,9 @@ class Game {
       conquest: [
         ['1 PLAYER', () => this.startNewGame(false, 'conquest')],
         ['2 PLAYERS', () => this.startNewGame(true, 'conquest')],
+        ['3-4 PLAYERS', () => this.startLocalBig('conquest')],
         ['ONLINE HOST', () => this.hostOnline(false, true)],
+        ['ONLINE HOST 4', () => this.hostOnline(true, true)],
         ['BACK', () => this.showMenu('main', 3)]
       ],
       settings: this.settingsMenuItems(),
@@ -1204,13 +1218,13 @@ class Game {
   }
 
   // Local 3-4 players on the big map: I and II on the keyboard, III and IV on gamepads
-  startLocalBig() {
+  startLocalBig(layoutName = 'big') {
     const pads = this.pads.length;
     if (pads === 0) {
       this.setNetStatus('ПОДКЛЮЧИТЕ ГЕЙМПАД');
       return;
     }
-    this.startNewGame(true, 'big', 2 + Math.min(2, pads));
+    this.startNewGame(true, layoutName, 2 + Math.min(2, pads));
   }
 
   // -------------------------------------------------------------
@@ -1338,9 +1352,11 @@ class Game {
   startNewGame(twoPlayers = this.twoPlayers, layoutName = 'classic', playerCount = null) {
     this.twoPlayers = twoPlayers;
     this.playerCount = playerCount || (twoPlayers ? 2 : 1);
-    this.localBig = !this.online && layoutName === 'big';
+    this.localBig = !this.online && this.playerCount > 2; // III/IV on gamepads
     document.getElementById('arcade-cabinet').classList.toggle('two-players', this.playerCount > 1);
     this.setLayout(layoutName);
+    // Compact sidebar with four player blocks: big map, or three-four players anywhere
+    document.getElementById('arcade-cabinet').classList.toggle('big-mode', layoutName === 'big' || this.playerCount > 2);
     this.stage = 1;
     this.gameOverText = null;
     this.createPlayers();
@@ -1408,6 +1424,7 @@ class Game {
     else {
       this.camY = 0;
       this.cities = [];
+      this.turrets = [];
     }
 
     // Players with lives left return to their spawn points
@@ -1501,7 +1518,7 @@ class Game {
   }
 
   updateHUD() {
-    const big = this.layoutName === 'big';
+    const big = this.layoutName === 'big' || this.players.length > 2;
     for (let i = 0; i < MAX_PLAYERS; i++) {
       const p = this.players[i];
       const n = i + 1;
@@ -1713,11 +1730,14 @@ class Game {
 
     // Spawn enemy tanks
     if (this.layout.conquest) {
+      this.dayTime += dt;
       const before = this.distanceRows;
       this.updateCamera(dt);
       if (this.distanceRows !== before) this.updateHUD();
       this.handleConquestSpawning(dt);
       this.updateCities(dt);
+      this.updateTurrets(dt);
+      this.updateCapturedCities(dt);
     } else {
       this.handleEnemySpawning(dt);
     }
@@ -2098,6 +2118,15 @@ class Game {
         }
       }
       if (b.dead) {
+        this.removeBullet(i);
+        continue;
+      }
+
+      // 2a. Bullet vs fortress turrets (conquest)
+      const hitTurret = b.owner === 'player' && this.turrets.find(t => t.alive && b.collidesWith(t));
+      if (hitTurret) {
+        b.dead = true;
+        this.hitTurret(hitTurret, b);
         this.removeBullet(i);
         continue;
       }
@@ -2595,7 +2624,7 @@ class Game {
       if (this.state !== 'GAMEOVER') return;
       this.setLogo('GAME', 'OVER');
       if (this.online) this.showMenu('onlineOver');
-      else if (this.layout.conquest) this.showMenu('conquest', this.twoPlayers ? 1 : 0);
+      else if (this.layout.conquest) this.showMenu('conquest', this.localBig ? 2 : (this.twoPlayers ? 1 : 0));
       else this.showMenu('main', this.localBig ? 2 : (this.twoPlayers ? 1 : 0));
       document.getElementById('game-overlay').classList.remove('hidden');
       this.gameOverText = null;
@@ -2704,7 +2733,7 @@ class Game {
     this.remoteInputs = [];
     this.remoteTapsSeen = [];
     this.setLogo('TANK', '2026');
-    this.startNewGame(true, 'big', 1 + net.peers.length);
+    this.startNewGame(true, net.conquest ? 'conquest' : 'big', 1 + net.peers.length);
   }
 
   // Names of everyone in the room (host's lobby screen, and sent to guests)
@@ -2835,6 +2864,7 @@ class Game {
     this.localBig = false;
     this.camY = 0;
     this.cities = [];
+    this.turrets = [];
     this.setLayout('classic');
     document.getElementById('arcade-cabinet').classList.remove('two-players');
     document.getElementById('stage-screen').classList.add('hidden');
@@ -2954,6 +2984,9 @@ class Game {
       nm: this.playerNames,
       ar: this.map.archetype,
       cy: Math.round(this.camY * 10) / 10,
+      dn: Math.round((this.dayTime || 0) * 10) / 10,
+      ca: this.map.chunkArchetypes || null,
+      tu: this.turrets.map(t => [t.x, t.y, t.dir, t.alive ? 1 : 0, r(t.flash)]),
       wo: this.worldShift,
       cq: this.layout.conquest ? [this.distanceRows, this.citiesCaptured] : null,
       ct: this.cities.map(c => [c.id, c.x, c.y, c.hp, c.maxHp, c.alive ? 1 : 0, c.captured ? 1 : 0, c.owner, c.zone.x, c.zone.y, c.zone.w, c.zone.h, c.name, r(c.alarm)]),
@@ -3001,6 +3034,11 @@ class Game {
       this.lastWorldShift = s.wo;
     }
     if (typeof s.cy === 'number') this.camY = s.cy;
+    if (typeof s.dn === 'number') this.dayTime = s.dn;
+    if (Array.isArray(s.ca)) this.map.chunkArchetypes = s.ca;
+    if (Array.isArray(s.tu)) {
+      this.turrets = s.tu.map(([x, y, dir, alive, flash]) => ({ x, y, w: 24, h: 24, dir, alive: !!alive, flash }));
+    }
     if (Array.isArray(s.cq)) [this.distanceRows, this.citiesCaptured] = s.cq;
     if (Array.isArray(s.ct)) {
       this.cities = s.ct.map(([id, x, y, hp, maxHp, alive, captured, owner, zx, zy, zw, zh, name, alarm]) => ({
@@ -3016,6 +3054,7 @@ class Game {
     }
     this.players = s.p.map(d => make(PlayerTank, d));
     this.playerCount = this.players.length;
+    document.getElementById('arcade-cabinet').classList.toggle('big-mode', this.layoutName === 'big' || this.players.length > 2);
     document.getElementById('arcade-cabinet').classList.toggle('two-players', this.players.length > 1);
     this.enemies = s.e.map(d => make(EnemyTank, d));
     this.bullets = s.bu.map(d => make(Bullet, d));
@@ -3948,6 +3987,9 @@ class Game {
 
   initConquest() {
     this.cities = [];
+    this.turrets = [];
+    this.lastCaptured = null;
+    this.dayTime = 0;
     this.worldShift = 0;
     this.distanceRows = 0;
     this.citiesCaptured = 0;
@@ -3978,9 +4020,21 @@ class Game {
         garrison: c.garrison,
         spawnTimer: 1.5,
         alarm: 0,
-        name: c.name || 'ГОРОД'
+        name: c.name || 'ГОРОД',
+        group: c.group || null,   // Fortress: falls when every HQ of the group is destroyed
+        boss: !!c.boss,
+        bonusTimer: 20 + Math.random() * 15
       });
     });
+    const diffStage = 1 + Math.floor(this.distanceRows / 52);
+    (this.map.newTurrets || []).forEach(t => {
+      this.turrets.push({
+        x: t.x * 16 + 4, y: t.y * 16 + 4, w: 24, h: 24, group: t.group,
+        hp: 3 + Math.min(3, Math.floor(diffStage / 2)), dir: 'DOWN', cooldown: 1 + Math.random(),
+        alive: true, activeBullets: 0, flash: 0
+      });
+    });
+    this.map.newTurrets = [];
     const bonuses = ['star', 'helmet', 'clock', 'grenade', 'tank', 'gun', 'boat'];
     this.map.newFinds.forEach(f => {
       const pu = new PowerUpItem(f.x * 16, f.y * 16, bonuses[Math.floor(Math.random() * bonuses.length)]);
@@ -4033,6 +4087,8 @@ class Game {
     });
     this.powerups = this.powerups.filter(p => p.y < limit);
     this.cities = this.cities.filter(c => c.zone.y < limit);
+    this.turrets.forEach(t => { t.y += dy; });
+    this.turrets = this.turrets.filter(t => t.y < limit);
     this.adoptChunkContent();
   }
 
@@ -4129,6 +4185,207 @@ class Game {
     });
   }
 
+  // 0 at noon .. ~0.62 at midnight (conquest only)
+  darkness() {
+    if (!this.layout.conquest) return 0;
+    return Math.max(0, -Math.cos(((this.dayTime || 0) / DAY_LENGTH) * Math.PI * 2)) * 0.62;
+  }
+
+  // Night: a dark layer over the field with holes cut out by headlights, fire and shells
+  renderNight() {
+    const dark = this.darkness();
+    if (dark < 0.02) return;
+    const W = this.map.pxW;
+    const H = this.viewH();
+    const k = 2; // Light map resolution (px per logical px)
+    if (!this.nightCanvas) this.nightCanvas = document.createElement('canvas');
+    const nc = this.nightCanvas;
+    if (nc.width !== W * k || nc.height !== H * k) {
+      nc.width = W * k;
+      nc.height = H * k;
+    }
+    const n = nc.getContext('2d');
+    n.setTransform(1, 0, 0, 1, 0, 0);
+    n.globalCompositeOperation = 'source-over';
+    n.clearRect(0, 0, nc.width, nc.height);
+    n.fillStyle = `rgba(4, 8, 24, ${dark})`;
+    n.fillRect(0, 0, nc.width, nc.height);
+
+    n.globalCompositeOperation = 'destination-out';
+    n.setTransform(k, 0, 0, k, 0, -this.camY * k);
+    const light = (x, y, r, strength) => {
+      const gr = n.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, `rgba(0, 0, 0, ${strength})`);
+      gr.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      n.fillStyle = gr;
+      n.fillRect(x - r, y - r, r * 2, r * 2);
+    };
+    // Headlight cones in front of every tank, and a little glow around it
+    this.players.concat(this.enemies).forEach(t => {
+      if (t.dead) return;
+      const d = DIRS[t.direction] || DIRS.UP;
+      const cx = t.x + 13;
+      const cy = t.y + 13;
+      const reach = t.type === 'player' ? 90 : 60;
+      const a = Math.atan2(d.dy, d.dx);
+      n.save();
+      n.beginPath();
+      n.moveTo(cx + d.dx * 10, cy + d.dy * 10);
+      n.arc(cx, cy, reach, a - 0.42, a + 0.42);
+      n.closePath();
+      n.clip();
+      light(cx + d.dx * 10, cy + d.dy * 10, reach, t.type === 'player' ? 0.95 : 0.7);
+      n.restore();
+      light(cx, cy, 24, t.type === 'player' ? 0.7 : 0.4);
+    });
+    this.explosions.forEach(e => light(e.x, e.y, e.large ? 80 : 36, 0.9 * (1 - Math.min(1, e.timer / e.duration))));
+    this.lights.forEach(l => light(l.x, l.y, l.radius * 1.4, 0.9 * (1 - l.t / l.duration)));
+    this.bullets.forEach(b => light(b.x + 3, b.y + 3, 16, 0.8));
+    this.cities.forEach(c => { if (c.alive) light(c.x + 16, c.y + 16, 34, 0.55); });
+    this.turrets.forEach(t => { if (t.alive) light(t.x + 12, t.y + 12, 14, 0.5); });
+    this.parts.forEach(p => { if (p.settled && p.heat > 0) light(p.x, p.y, 10, 0.6 * Math.min(1, p.heat)); });
+
+    this.ctx.drawImage(nc, 0, this.camY, W, H);
+  }
+
+  // Captured cities now and then leave a bonus by their ruined HQ (while on screen)
+  updateCapturedCities(dt) {
+    this.cities.forEach(city => {
+      if (!city.captured) return;
+      city.bonusTimer -= dt;
+      if (city.bonusTimer > 0) return;
+      city.bonusTimer = 30 + Math.random() * 20;
+      const z = city.zone;
+      if (z.y + z.h < this.camY || z.y > this.camY + this.viewH()) return;
+      if (this.powerups.some(p => this.inZone(city, p.x + 14, p.y + 14))) return;
+      const T = MapGenerator.TILES;
+      const spots = [[-32, 0], [32, 0], [0, 32], [0, -32], [-32, 32], [32, 32]];
+      for (const [dx, dy] of spots) {
+        const x = city.x + dx;
+        const y = city.y + dy;
+        const c = Math.floor(x / 16);
+        const r = Math.floor(y / 16);
+        if (r < 0 || c < 0 || r + 1 >= this.map.rows || c + 1 >= this.map.cols) continue;
+        const tiles = [this.map.grid[r][c], this.map.grid[r][c + 1], this.map.grid[r + 1][c], this.map.grid[r + 1][c + 1]];
+        if (tiles.some(t => t === T.STEEL || t === T.WATER)) continue;
+        const bonuses = ['star', 'helmet', 'clock', 'grenade', 'tank', 'gun', 'boat'];
+        this.powerups.push(new PowerUpItem(c * 16, r * 16, bonuses[Math.floor(Math.random() * bonuses.length)]));
+        this.spawnRing(c * 16 + 14, r * 16 + 14, PLAYER_COLORS[city.owner || 0][0], 26, 0.5);
+        sound.playPowerUpSpawn();
+        return;
+      }
+    });
+  }
+
+  // Fortress guns: turn to a player in line with them and fire
+  updateTurrets(dt) {
+    const diff = DIFFICULTY[this.difficulty];
+    this.turrets.forEach(t => {
+      if (!t.alive) return;
+      if (t.flash > 0) t.flash -= dt;
+      if (t.y + t.h < this.camY || t.y > this.camY + this.viewH()) return; // Off screen: idle
+      t.cooldown -= dt;
+      const cx = t.x + 12;
+      const cy = t.y + 12;
+      let aim = null;
+      let best = Infinity;
+      this.players.forEach(p => {
+        if (p.dead) return;
+        const dx = p.x + 13 - cx;
+        const dy = p.y + 13 - cy;
+        if (Math.abs(dx) < 12 && Math.abs(dy) < best) { best = Math.abs(dy); aim = dy < 0 ? 'UP' : 'DOWN'; }
+        else if (Math.abs(dy) < 12 && Math.abs(dx) < best) { best = Math.abs(dx); aim = dx < 0 ? 'LEFT' : 'RIGHT'; }
+      });
+      if (!aim) return;
+      t.dir = aim;
+      if (t.cooldown > 0 || t.activeBullets > 0 || this.isFrozen) return;
+      t.cooldown = 1.6 * diff.reaction;
+      const d = DIRS[aim];
+      t.activeBullets++;
+      t.flash = 0.08;
+      this.addBullet(new Bullet('enemy', cx - 3 + d.dx * 15, cy - 3 + d.dy * 15, aim, 4.2 * diff.bullet, false, t));
+    });
+  }
+
+  hitTurret(t, bullet) {
+    if (bullet.owner !== 'player') return;
+    t.hp--;
+    this.spawnRicochetSparks(bullet.x + 3, bullet.y + 3);
+    sound.playRicochet('armor');
+    if (t.hp > 0) return;
+    t.alive = false;
+    this.explosions.push(new ExplosionEffect(t.x + 12, t.y + 12, true));
+    this.spawnTankDebris(t.x + 12, t.y + 12, ['#5d6674', '#9aa5b4', '#ff7043']);
+    this.addScreenShake(4);
+    sound.playExplosion(true);
+    this.addScore(500, t.x + 12, t.y + 6, bullet.shooter);
+  }
+
+  renderTurrets() {
+    const ctx = this.ctx;
+    const t0 = Date.now() / 1000;
+    this.turrets.forEach(t => {
+      if (t.y > this.camY + this.viewH() + 30 || t.y + 30 < this.camY) return;
+      const cx = t.x + 12;
+      const cy = t.y + 12;
+      ctx.save();
+      if (!t.alive) {
+        ctx.fillStyle = '#1e2228';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        return;
+      }
+      // Octagonal armoured base
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.beginPath();
+      ctx.arc(cx + 1.5, cy + 2, 12, 0, Math.PI * 2);
+      ctx.fill();
+      const g = ctx.createLinearGradient(t.x, t.y, t.x + 24, t.y + 24);
+      g.addColorStop(0, '#8c96a4');
+      g.addColorStop(1, '#3b424d');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      for (let k = 0; k < 8; k++) {
+        const a = Math.PI / 8 + k * Math.PI / 4;
+        const px = cx + Math.cos(a) * 12;
+        const py = cy + Math.sin(a) * 12;
+        if (k === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+      // Rotating gun
+      const angle = { UP: 0, RIGHT: Math.PI / 2, DOWN: Math.PI, LEFT: -Math.PI / 2 }[t.dir];
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
+      ctx.fillStyle = '#2a2f37';
+      ctx.fillRect(-2.2, -15, 4.4, 12);
+      ctx.fillStyle = '#c7cfda';
+      ctx.fillRect(-2.2, -15, 1.4, 12);
+      if (t.flash > 0) {
+        ctx.fillStyle = '#fff59d';
+        ctx.beginPath();
+        ctx.arc(0, -16, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#4a525e';
+      ctx.beginPath();
+      ctx.arc(0, 0, 6, 0, Math.PI * 2);
+      ctx.fill();
+      // Blinking red light
+      ctx.fillStyle = Math.floor(t0 * 3 + t.x) % 2 ? '#ff1744' : '#5a0f12';
+      ctx.beginPath();
+      ctx.arc(0, 0, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+  }
+
   // Player shell hits an enemy headquarters
   hitCity(city, bullet) {
     const cx = city.x + 16;
@@ -4143,28 +4400,66 @@ class Game {
     this.spawnRing(cx, cy, '#ff1744', 22, 0.35);
     this.addScreenShake(2);
     sound.playRicochet('armor');
-    if (city.hp <= 0) this.captureCity(city, bullet.shooter);
+    if (city.hp <= 0) this.destroyHQ(city, bullet.shooter);
+  }
+
+  // One HQ destroyed; a fortress needs all of its HQs gone before it falls
+  destroyHQ(city, player) {
+    if (!city.group) {
+      this.captureCity(city, player);
+      return;
+    }
+    city.alive = false;
+    const members = this.cities.filter(c => c.group === city.group);
+    const left = members.filter(c => c.alive).length;
+    const cx = city.x + 16;
+    const cy = city.y + 16;
+    this.explosions.push(new ExplosionEffect(cx, cy, true));
+    this.spawnTankDebris(cx, cy, ['#e53935', '#ffd54f', '#8d6e63', '#bdbdbd']);
+    this.addScreenShake(6);
+    sound.playExplosion(true);
+    if (left > 0) {
+      this.addScore(1000, cx, cy - 10, player);
+      this.floatingScores.push(new FloatingScore(cx, cy - 26, 0, {
+        text: 'ШТАБ ' + (members.length - left) + '/' + members.length, color: '#ffd54f', duration: 2, rise: 10
+      }));
+      members.forEach(c => { c.alarm = 10; });
+      return;
+    }
+    // The whole fortress falls: its turrets blow up and every garrison gives up
+    this.turrets.forEach(t => {
+      if (t.group !== city.group || !t.alive) return;
+      t.alive = false;
+      this.explosions.push(new ExplosionEffect(t.x + 12, t.y + 12, true));
+      this.spawnTankDebris(t.x + 12, t.y + 12, ['#5d6674', '#9aa5b4', '#ff7043']);
+    });
+    members.forEach(c => { c.alive = true; this.captureCity(c, player, c !== city); });
+    this.addScore(5000, cx, cy - 20, player);
   }
 
   // Headquarters destroyed: the city and its land become the players'
-  captureCity(city, player) {
+  // quiet: capture without the big effects (other HQs of a fortress)
+  captureCity(city, player, quiet = false) {
     const cx = city.x + 16;
     const cy = city.y + 16;
     city.alive = false;
     city.captured = true;
     city.owner = player ? player.index : 0;
-    this.citiesCaptured++;
-    this.explosions.push(new ExplosionEffect(cx, cy, true));
-    this.spawnTankDebris(cx, cy, ['#e53935', '#ffd54f', '#8d6e63', '#bdbdbd']);
-    this.spawnRing(cx, cy, PLAYER_COLORS[city.owner][0], 60, 0.8);
-    this.flashScreen();
-    this.addScreenShake(8);
-    sound.playExplosion(true);
-    sound.playPowerUpCollect('tank');
-    this.addScore(2000, cx, cy - 10, player);
-    this.floatingScores.push(new FloatingScore(cx, cy - 26, 0, {
-      text: city.name + ' ВЗЯТ', color: PLAYER_COLORS[city.owner][0], duration: 3, rise: 10
-    }));
+    this.lastCaptured = city;
+    if (!quiet) {
+      this.citiesCaptured++;
+      this.explosions.push(new ExplosionEffect(cx, cy, true));
+      this.spawnTankDebris(cx, cy, ['#e53935', '#ffd54f', '#8d6e63', '#bdbdbd']);
+      this.spawnRing(cx, cy, PLAYER_COLORS[city.owner][0], 60, 0.8);
+      this.flashScreen();
+      this.addScreenShake(8);
+      sound.playExplosion(true);
+      sound.playPowerUpCollect('tank');
+      this.addScore(2000, cx, cy - 10, player);
+      this.floatingScores.push(new FloatingScore(cx, cy - 26, 0, {
+        text: city.name + (city.group ? ' ПАЛ' : ' ВЗЯТ'), color: PLAYER_COLORS[city.owner][0], duration: 3, rise: 10
+      }));
+    }
     // The garrison gives up
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       if (this.enemies[i].homeCity === city.id) this.destroyEnemy(this.enemies[i], i, player);
@@ -4176,6 +4471,20 @@ class Game {
   // Respawn on free ground near the bottom middle of the screen
   findRespawnSpot(p) {
     const T = MapGenerator.TILES;
+    // Last captured city on screen: respawn among its streets
+    const home = this.lastCaptured;
+    if (home && home.zone.y + home.zone.h > this.camY + 32 && home.zone.y < this.camY + this.viewH() - 32) {
+      for (let k = 0; k < 40; k++) {
+        const x = Math.round((home.x - 48 + Math.random() * 96 - 3) / 16) * 16 + 3;
+        const y = Math.round((home.y - 48 + Math.random() * 96 - 3) / 16) * 16 + 3;
+        if (y < this.camY + 4 || y + 26 > this.camY + this.viewH() - 4) continue;
+        if (!this.map.isBlocked(x, y, 26, 26, false, p, true)) {
+          p.spawnX = x;
+          p.spawnY = y;
+          return;
+        }
+      }
+    }
     const bottomRow = Math.floor((this.camY + this.viewH()) / 16) - 3;
     const topRow = Math.floor((this.camY + this.viewH() / 2) / 16);
     const mid = Math.floor(this.map.cols / 2) - 1;
@@ -4202,6 +4511,91 @@ class Game {
     }
     p.spawnX = c * 16 + 3;
     p.spawnY = r * 16 + 3;
+  }
+
+  // Sidebar minimap: the three screens of land, cities, tanks and the visible window
+  renderMinimap() {
+    const cv = document.getElementById('minimap');
+    if (!cv || !this.layout.conquest || !this.map.grid) return;
+    const m = cv.getContext('2d');
+    const sx = cv.width / this.map.cols;
+    const sy = cv.height / this.map.rows;
+    const T = MapGenerator.TILES;
+    const colors = { [T.BRICK]: '#9c4a2c', [T.STEEL]: '#9aa5b4', [T.WATER]: '#1e5bb5', [T.TREES]: '#2e7d32', [T.ICE]: '#9fcbe8' };
+    m.fillStyle = '#15191f';
+    m.fillRect(0, 0, cv.width, cv.height);
+    for (let r = 0; r < this.map.rows; r++) {
+      for (let c = 0; c < this.map.cols; c++) {
+        const color = colors[this.map.grid[r][c]];
+        if (!color) continue;
+        m.fillStyle = color;
+        m.fillRect(c * sx, r * sy, sx, sy);
+      }
+    }
+    this.cities.forEach(city => {
+      const z = city.zone;
+      if (city.captured) {
+        m.fillStyle = PLAYER_COLORS[city.owner || 0][0];
+        m.globalAlpha = 0.35;
+        m.fillRect(z.x / 16 * sx, z.y / 16 * sy, z.w / 16 * sx, z.h / 16 * sy);
+        m.globalAlpha = 1;
+      }
+      m.fillStyle = city.alive ? '#ff1744' : PLAYER_COLORS[city.owner || 0][0];
+      m.fillRect(city.x / 16 * sx - 1, city.y / 16 * sy - 1, 2 * sx + 2, 2 * sy + 2);
+    });
+    m.fillStyle = '#ff5252';
+    this.enemies.forEach(e => { if (!e.dead) m.fillRect((e.x + 9) / 16 * sx, (e.y + 9) / 16 * sy, 2, 2); });
+    this.players.forEach(p => {
+      if (p.dead) return;
+      m.fillStyle = PLAYER_COLORS[p.index][0];
+      m.fillRect((p.x + 8) / 16 * sx - 0.5, (p.y + 8) / 16 * sy - 0.5, 3, 3);
+    });
+    m.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    m.lineWidth = 1;
+    m.strokeRect(0.5, this.camY / 16 * sy + 0.5, cv.width - 1, this.viewH() / 16 * sy - 1);
+  }
+
+  // Compass at the screen edge pointing to the nearest city still held by the enemy
+  renderCompass() {
+    if (!this.layout.conquest) return;
+    const alive = this.players.filter(p => !p.dead);
+    if (!alive.length) return;
+    const px = alive.reduce((s, p) => s + p.x + 13, 0) / alive.length;
+    const py = alive.reduce((s, p) => s + p.y + 13, 0) / alive.length;
+    let target = null;
+    let best = Infinity;
+    this.cities.forEach(c => {
+      if (!c.alive) return;
+      const d = Math.hypot(c.x + 16 - px, c.y + 16 - py);
+      if (d < best) { best = d; target = c; }
+    });
+    if (!target) return;
+    const sy = target.y + 16 - this.camY;
+    if (sy > 0 && sy < this.viewH()) return; // City is on screen
+    const ctx = this.ctx;
+    const t = Date.now() / 1000;
+    const ahead = sy <= 0;
+    const x = Math.max(16, Math.min(this.map.pxW - 16, target.x + 16));
+    const y = ahead ? 10 + Math.sin(t * 5) * 1.5 : this.viewH() - 10 - Math.sin(t * 5) * 1.5;
+    ctx.save();
+    ctx.fillStyle = '#ff5252';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    if (ahead) { ctx.moveTo(x, y - 6); ctx.lineTo(x + 5, y + 2); ctx.lineTo(x - 5, y + 2); }
+    else { ctx.moveTo(x, y + 6); ctx.lineTo(x + 5, y - 2); ctx.lineTo(x - 5, y - 2); }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.fill();
+    ctx.font = '6px "Press Start 2P", monospace';
+    ctx.textAlign = x < 60 ? 'left' : x > this.map.pxW - 60 ? 'right' : 'center';
+    const tx = ctx.textAlign === 'left' ? x - 4 : ctx.textAlign === 'right' ? x + 4 : x;
+    const label = target.name + ' ' + Math.round(best / 16);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillText(label, tx + 0.6, (ahead ? y + 11 : y - 8) + 0.6);
+    ctx.fillStyle = '#ffd0d0';
+    ctx.fillText(label, tx, ahead ? y + 11 : y - 8);
+    ctx.restore();
   }
 
   // Captured land: tinted with the owner's colour and outlined
@@ -4311,6 +4705,49 @@ class Game {
     }
   }
 
+  // Conquest: every chunk of land has its own ground, city streets are paved
+  renderConquestGround(top, bottom) {
+    const ctx = this.ctx;
+    const groundFor = {
+      FOREST_AMBUSH: 'grass', RIVER_CROSSING: 'grass', VILLAGE: 'grass', CANYON: 'sand',
+      WINTER_ICE: 'snow', URBAN_LABYRINTH: 'cobble', RUINS: 'cobble', STEEL_BUNKERS: 'cobble',
+      DEFENSE_LINE: 'dirt', SYMMETRICAL_FORTRESS: 'dirt'
+    };
+    if (!this.groundPatterns) {
+      this.groundPatterns = {};
+      ['grass', 'sand', 'snow', 'cobble', 'dirt'].forEach(kind => {
+        const p = ctx.createPattern(Sprites.cache['ground_' + kind], 'repeat');
+        if (p.setTransform) p.setTransform(new DOMMatrix().scale(16 / Sprites.TEX));
+        this.groundPatterns[kind] = p;
+      });
+    }
+    const chunkH = MapGenerator.ROWS * 16;
+    const W = this.map.pxW;
+    (this.map.chunkArchetypes || []).forEach((arch, i) => {
+      const y0 = Math.max(top, i * chunkH);
+      const y1 = Math.min(bottom, (i + 1) * chunkH);
+      if (y1 <= y0) return;
+      ctx.fillStyle = this.groundPatterns[groundFor[arch] || 'dirt'];
+      ctx.fillRect(0, y0, W, y1 - y0);
+      // Soft seam where two lands meet
+      if (i > 0 && y0 === i * chunkH) {
+        const g = ctx.createLinearGradient(0, y0 - 6, 0, y0 + 6);
+        g.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        g.addColorStop(0.5, 'rgba(0, 0, 0, 0.35)');
+        g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, y0 - 6, W, 12);
+      }
+    });
+    // Paved city streets
+    ctx.fillStyle = this.groundPatterns.cobble;
+    this.cities.forEach(c => {
+      const z = c.zone;
+      if (z.y + z.h < top || z.y > bottom) return;
+      ctx.fillRect(z.x, z.y, z.w, z.h);
+    });
+  }
+
   renderGround() {
     // High-tech dark tactical bunker battlefield floor
     this.ctx.fillStyle = '#0f1319';
@@ -4319,6 +4756,10 @@ class Game {
     const top = Math.max(0, Math.floor(this.camY / 32) * 32 - 32);
     const bottom = Math.min(H, this.camY + this.viewH() + 32);
     this.ctx.fillRect(0, top, W, bottom - top);
+    if (this.layout.conquest) {
+      this.renderConquestGround(top, bottom);
+      return;
+    }
 
     // Subtle 32px metal plate grid seams
     this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
@@ -4561,6 +5002,7 @@ class Game {
     this.map.render(ctx, false, this.waterFrame);
     this.renderTerritory();
     this.renderCities();
+    this.renderTurrets();
 
     // 2. Base Phoenix Eagle Monument (64x64 HD texture rendered at 32x32)
     this.bases.forEach(base => {
@@ -4590,8 +5032,6 @@ class Game {
     // 7. Upper Terrain Layer (Trees / Foliage Canopy)
     this.map.render(ctx, true);
     this.renderTanksUnderTrees(ctx);
-    this.renderPlayerBadges(ctx);
-    this.renderCityFlags();
 
     // 8. Enemy Spawn Animations (Flashing Star with Neon Glow)
     this.spawnAnimations.forEach(sa => {
@@ -4625,8 +5065,11 @@ class Game {
     // 9. Shockwave rings, combat particles, explosions
     this.renderRings();
     this.renderParticles();
+    this.renderNight();
     this.explosions.forEach(e => e.render(ctx));
     this.renderLights();
+    this.renderPlayerBadges(ctx);
+    this.renderCityFlags();
 
     // 10. Floating Scores
     this.floatingScores.forEach(fs => fs.render(ctx));
@@ -4634,6 +5077,7 @@ class Game {
     // Screen-space overlays from here on
     ctx.translate(0, Math.round(this.camY * this.renderScale) / this.renderScale);
     this.renderWeather();
+    this.renderCompass();
 
     // 11. GAME OVER rising from the bottom (classic NES)
     if (this.gameOverText) {
@@ -4672,6 +5116,8 @@ class Game {
       }
       this.render();
       this.syncPauseMenu();
+      this.minimapTick = ((this.minimapTick || 0) + 1) % 6;
+      if (this.minimapTick === 0) this.renderMinimap();
 
       if (this.online && this.net && this.net.isHost) {
         this.net.sendFrame(this.buildSnapshot(), this.encodeMap());
