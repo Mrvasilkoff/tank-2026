@@ -784,16 +784,17 @@ const MapGenerator = {
     }
   },
 
-  // City names: Russian-sounding syllables, e.g. КРАСНОГОРСК, ЗАРЕЧЬЕ, БЕЛОДАР
+  // City names from Russian-sounding syllables in Latin letters, e.g. KRASNOGORSK, ZAREVO, BELODAR
+  // (the pixel font has no Cyrillic)
   cityName(rng) {
     const pick = list => list[Math.floor(rng() * list.length)];
-    const roots = ['КРАС', 'ВОЛ', 'БЕЛ', 'СЕВЕР', 'ЗАР', 'ОСТ', 'ГОР', 'ЛЕС', 'КАМЕН', 'ТУР', 'МИР', 'СОЛ',
-      'ДУБ', 'ЯР', 'ЗВЕН', 'ТИХ', 'БОР', 'СНЕЖ', 'ЧЕР', 'ЖЕЛЕЗ', 'ГРОМ', 'ЛУГ', 'РЕЧ', 'СТАЛ', 'ВЕТР'];
-    const links = ['О', 'Е', 'И', ''];
-    const ends = ['ГРАД', 'ГОРСК', 'ПОЛЬ', 'СК', 'ОВ', 'ИНСК', 'ЕЦ', 'ИНО', 'ДАР', 'МИР', 'ЬЕ', 'АНЬ', 'ОВКА', 'ЕВО'];
+    const roots = ['KRAS', 'VOL', 'BEL', 'SEVER', 'ZAR', 'OST', 'GOR', 'LES', 'KAMEN', 'TUR', 'MIR', 'SOL',
+      'DUB', 'YAR', 'ZVEN', 'TIKH', 'BOR', 'SNEZH', 'CHER', 'ZHELEZ', 'GROM', 'LUG', 'RECH', 'STAL', 'VETR'];
+    const links = ['O', 'E', 'I', ''];
+    const ends = ['GRAD', 'GORSK', 'POL', 'SK', 'OV', 'INSK', 'ETS', 'INO', 'DAR', 'MIR', 'YE', 'AN', 'OVKA', 'EVO'];
     let name = pick(roots);
     const end = pick(ends);
-    if (/^[ОЕАИЬ]/.test(end) || /[ОЕАИ]$/.test(name)) name += end;
+    if (/^[OEAIY]/.test(end) || /[OEAI]$/.test(name)) name += end;
     else name += pick(links) + end;
     return name.slice(0, 12);
   },

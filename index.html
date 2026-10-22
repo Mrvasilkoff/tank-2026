@@ -18,12 +18,12 @@
         <span class="logo-yellow">2026</span>
       </div>
       <div class="header-controls">
-        <button id="btn-sound" class="arcade-btn small" title="Звук (M)"><span class="btn-icon">🔊</span></button>
-        <button id="btn-crt" class="arcade-btn small" title="CRT фильтр"><span class="btn-icon">📺</span></button>
-        <button id="btn-touch-toggle" class="arcade-btn small" title="Экранные кнопки"><span class="btn-icon">🎮</span></button>
-        <button id="btn-seed" class="arcade-btn small" title="Новая карта (N)"><span class="btn-icon">🎲</span></button>
-        <button id="btn-howtoplay" class="arcade-btn small" title="Правила и управление"><span class="btn-icon">?</span></button>
-        <button id="btn-fullscreen" class="arcade-btn small" title="Во весь экран (для телевизора)"><span class="btn-icon">⛶</span></button>
+        <button id="btn-sound" class="arcade-btn small" title="Sound (M)"><span class="btn-icon">🔊</span></button>
+        <button id="btn-crt" class="arcade-btn small" title="CRT filter"><span class="btn-icon">📺</span></button>
+        <button id="btn-touch-toggle" class="arcade-btn small" title="On-screen buttons"><span class="btn-icon">🎮</span></button>
+        <button id="btn-seed" class="arcade-btn small" title="New map (N)"><span class="btn-icon">🎲</span></button>
+        <button id="btn-howtoplay" class="arcade-btn small" title="Rules and controls"><span class="btn-icon">?</span></button>
+        <button id="btn-fullscreen" class="arcade-btn small" title="Fullscreen (for TVs)"><span class="btn-icon">⛶</span></button>
       </div>
     </header>
 
@@ -46,10 +46,10 @@
             <p class="sub-title"></p>
 
             <div id="net-panel" class="hidden">
-              <input id="net-name" class="net-input net-name" maxlength="8" placeholder="ИМЯ" autocomplete="off" spellcheck="false" title="Ваше имя">
-              <div id="net-code" class="net-code" title="Скопировать код"></div>
+              <input id="net-name" class="net-input net-name" maxlength="8" placeholder="NAME" autocomplete="off" spellcheck="false" title="Your name">
+              <div id="net-code" class="net-code" title="Copy the code"></div>
               <div id="net-lobby" class="net-lobby hidden"></div>
-              <input id="net-join-code" class="net-input" maxlength="6" placeholder="КОД" autocomplete="off" spellcheck="false">
+              <input id="net-join-code" class="net-input" maxlength="6" placeholder="CODE" autocomplete="off" spellcheck="false">
             </div>
 
             <div id="records-table" class="records-table hidden"></div>
@@ -65,9 +65,9 @@
 
         <!-- Conquest: pick an upgrade after a captured city -->
         <div id="upgrade-panel" class="upgrade-panel hidden">
-          <div class="upgrade-title">УЛУЧШЕНИЕ</div>
+          <div class="upgrade-title">UPGRADE</div>
           <div id="upgrade-cards" class="upgrade-cards"></div>
-          <div class="upgrade-hint">1 / 2 / 3 · ← → и ОГОНЬ</div>
+          <div class="upgrade-hint">1 / 2 / 3 · ← → AND FIRE</div>
         </div>
 
         <!-- Stage Intermission Screen -->
@@ -141,7 +141,7 @@
         <!-- Conquest: minimap of the land around the players and distance travelled -->
         <div class="hud-section conquest-only">
           <canvas id="minimap" class="minimap" width="52" height="156"></canvas>
-          <div class="hud-label mini">ПУТЬ</div>
+          <div class="hud-label mini">DIST</div>
           <div id="hud-distance" class="digit">0</div>
         </div>
 
@@ -205,9 +205,9 @@
         <!-- Power-up Active Badges -->
         <div class="hud-section powerups-hud">
           <div id="active-powerups-list">
-            <div id="badge-boat" class="bonus-badge hidden" title="Лодка">⛵</div>
-            <div id="badge-shovel" class="bonus-badge hidden" title="Стальная база">🧱</div>
-            <div id="badge-clock" class="bonus-badge hidden" title="Враги заморожены">⏱️</div>
+            <div id="badge-boat" class="bonus-badge hidden" title="Boat">⛵</div>
+            <div id="badge-shovel" class="bonus-badge hidden" title="Steel base">🧱</div>
+            <div id="badge-clock" class="bonus-badge hidden" title="Enemies frozen">⏱️</div>
           </div>
         </div>
 
@@ -248,19 +248,19 @@
     <div class="modal-content">
       <h2>TANK 2026</h2>
       <div class="modal-body">
-        <h3>УПРАВЛЕНИЕ:</h3>
+        <h3>CONTROLS:</h3>
         <ul>
-          <li><strong>Клавиши</strong> меняются в SETTINGS (там же сложность, имя и особые враги CONQUEST: артиллерия, минёры, разведка)</li>
-          <li><strong>Геймпад:</strong> крестовина / стик — движение, A B X Y RB RT — огонь, START — пауза</li>
-          <li><strong>3-4 PLAYERS:</strong> I и II на клавиатуре, III и IV на геймпадах, большая карта с двумя штабами</li>
-          <li><strong>1 игрок:</strong> WASD / стрелки — движение, ПРОБЕЛ / J / клик — огонь</li>
-          <li><strong>2 игрока — I:</strong> WASD — движение, ПРОБЕЛ / F — огонь</li>
-          <li><strong>2 игрока — II:</strong> стрелки — движение, ENTER / NUM0 / ПРАВЫЙ CTRL — огонь</li>
-          <li><strong>ONLINE:</strong> один нажимает HOST и сообщает код, второй — JOIN и вводит код</li>
-          <li><strong>CONQUEST:</strong> бесконечный поход вверх без штаба. Навстречу едут враги, по пути встречаются города — разрушьте красный штаб, и земля станет вашей. Флаг на панели — число захваченных городов</li>
-          <li><strong>Ночь в CONQUEST:</strong> Q (у второго игрока «.», на геймпаде LB) — выключить фары: враги замечают вас только вблизи, выстрел выдаёт вас. Прожекторы городов поднимают тревогу (лампу на штабе можно прострелить). Ночью больше быстрых врагов, артиллерия мажет, вода замерзает, очки ×1.5, бонус «ракета» освещает всё вокруг. Всё включается и выключается в SETTINGS → НОЧЬ</li>
-          <li><strong>HOST 4:</strong> большая карта с двумя штабами на 2–4 игроков; хост нажимает START, когда все подключились. Потеря любого штаба — GAME OVER</li>
-          <li><strong>P / ESC</strong> — пауза-меню, <strong>M</strong> — звук, <strong>N</strong> — новая карта</li>
+          <li><strong>Keys</strong> can be changed in SETTINGS (also difficulty, your name, special CONQUEST enemies and night rules)</li>
+          <li><strong>Gamepad:</strong> d-pad / stick — move, A B X Y RB RT — fire, LB — headlights, START — pause</li>
+          <li><strong>3-4 PLAYERS:</strong> I and II on the keyboard, III and IV on gamepads, big map with two bases</li>
+          <li><strong>1 player:</strong> WASD / arrows — move, SPACE / J / click — fire</li>
+          <li><strong>2 players — I:</strong> WASD — move, SPACE / F — fire</li>
+          <li><strong>2 players — II:</strong> arrows — move, ENTER / NUM0 / RIGHT CTRL — fire</li>
+          <li><strong>ONLINE:</strong> one player picks HOST and shares the code, the other picks JOIN and types it</li>
+          <li><strong>CONQUEST:</strong> an endless march north with no base of your own. Enemies come towards you and cities stand in the way — destroy the red HQ and the land becomes yours. The flag on the panel counts captured cities</li>
+          <li><strong>Night in CONQUEST:</strong> Q (player II: «.», gamepad: LB) switches your headlights off: enemies only notice you up close, but a shot gives you away. City searchlights raise the alarm (the lamp on the HQ can be shot out). At night there are more fast enemies, artillery misses, water freezes, kills score ×1.5 and the flare bonus lights everything around. Every rule can be switched in SETTINGS → NIGHT</li>
+          <li><strong>HOST 4:</strong> big map with two bases for 2–4 players; the host presses START when everyone has joined. Losing either base is GAME OVER</li>
+          <li><strong>P / ESC</strong> — pause menu, <strong>M</strong> — sound, <strong>N</strong> — new map</li>
         </ul>
 
         <h3>TERRAIN:</h3>

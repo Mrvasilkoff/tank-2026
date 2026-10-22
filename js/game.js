@@ -672,13 +672,13 @@ const BOSS_PROBE = { isBoss: true, type: 'boss', y: 0 }; // Stand-in for a boss 
 
 // Conquest upgrades offered after each captured city (team-wide, stack up to max)
 const UPGRADES = [
-  { id: 'armor', icon: '🛡', label: 'БРОНЯ', desc: 'держит +1 попадание', max: 3 },
-  { id: 'speed', icon: '⚡', label: 'СКОРОСТЬ', desc: '+10% к ходу', max: 3 },
-  { id: 'reload', icon: '💥', label: 'ПУШКА', desc: '+1 снаряд, снаряды быстрее', max: 2 },
-  { id: 'lights', icon: '💡', label: 'ФАРЫ', desc: 'светят дальше ночью', max: 2 },
-  { id: 'boat', icon: '⛵', label: 'АМФИБИЯ', desc: 'лодка навсегда', max: 1 },
-  { id: 'shield', icon: '✨', label: 'ЩИТ', desc: '+3 с щита при появлении', max: 3 },
-  { id: 'life', icon: '❤', label: 'ЖИЗНЬ', desc: '+1 жизнь каждому', max: 99 }
+  { id: 'armor', icon: '🛡', label: 'ARMOR', desc: 'takes one more hit', max: 3 },
+  { id: 'speed', icon: '⚡', label: 'SPEED', desc: '+10% move speed', max: 3 },
+  { id: 'reload', icon: '💥', label: 'CANNON', desc: '+1 shell, faster shells', max: 2 },
+  { id: 'lights', icon: '💡', label: 'LIGHTS', desc: 'reach further at night', max: 2 },
+  { id: 'boat', icon: '⛵', label: 'AMPHIBIAN', desc: 'keeps the boat for good', max: 1 },
+  { id: 'shield', icon: '✨', label: 'SHIELD', desc: '+3 s shield on spawn', max: 3 },
+  { id: 'life', icon: '❤', label: 'LIFE', desc: '+1 life for everyone', max: 99 }
 ];
 
 // Player names (online play): up to 8 letters, digits, spaces or dashes
@@ -1143,7 +1143,7 @@ class Game {
     codeEl.addEventListener('click', () => {
       if (navigator.clipboard && codeEl.textContent) {
         navigator.clipboard.writeText(codeEl.textContent).catch(() => {});
-        this.setNetStatus('КОД СКОПИРОВАН', true);
+        this.setNetStatus('CODE COPIED', true);
       }
     });
 
@@ -1289,7 +1289,7 @@ class Game {
     if (name === 'main' || name === 'online' || name === 'join' || name === 'records') this.setNetStatus('');
     if (name === 'settings') {
       const n = this.pads.length;
-      this.setNetStatus(this.awaitingKey ? 'НАЖМИТЕ КЛАВИШУ' : (n ? 'ГЕЙМПАДОВ: ' + n : 'ГЕЙМПАД НЕ НАЙДЕН'), !!this.awaitingKey);
+      this.setNetStatus(this.awaitingKey ? 'PRESS A KEY' : (n ? 'GAMEPADS: ' + n : 'NO GAMEPAD FOUND'), !!this.awaitingKey);
     }
   }
 
@@ -1297,8 +1297,8 @@ class Game {
   settingsMenuItems() {
     const items = [['DIFFICULTY: ' + DIFFICULTY[this.difficulty].label, () => this.cycleDifficulty(), true]];
     // Conquest special enemies on / off
-    [['artillery', 'АРТИЛЛЕРИЯ'], ['miner', 'МИНЁРЫ'], ['scout', 'РАЗВЕДКА']].forEach(([type, label], k) => {
-      items.push([label + ': ' + (this.enemyTypes[type] ? 'ВКЛ' : 'ВЫКЛ'), () => {
+    [['artillery', 'ARTILLERY'], ['miner', 'MINERS'], ['scout', 'SCOUTS']].forEach(([type, label], k) => {
+      items.push([label + ': ' + (this.enemyTypes[type] ? 'ON' : 'OFF'), () => {
         this.enemyTypes[type] = !this.enemyTypes[type];
         saveJSON('tank2026_enemies', this.enemyTypes);
         this.showMenu('settings', this.menuIndex);
@@ -1314,7 +1314,7 @@ class Game {
         }]);
       });
     });
-    items.push(['НОЧЬ...', () => this.showMenu('night'), true]);
+    items.push(['NIGHT...', () => this.showMenu('night'), true]);
     items.push(['RESET KEYS', () => {
       this.keymap = { p1: Object.assign({}, DEFAULT_KEYMAP.p1), p2: Object.assign({}, DEFAULT_KEYMAP.p2) };
       applyKeyMap(this.keymap);
@@ -1329,10 +1329,10 @@ class Game {
   nightMenuItems() {
     const opts = this.localNightOpts;
     const rows = [
-      ['cycle', 'ДЕНЬ И НОЧЬ'], ['lights', 'ФАРЫ И СКРЫТНОСТЬ'], ['searchlights', 'ПРОЖЕКТОРЫ'],
-      ['enemies', 'НОЧНЫЕ ВРАГИ'], ['ice', 'ЛЁД НА ВОДЕ'], ['bonus', 'НОЧНОЙ БОНУС']
+      ['cycle', 'DAY & NIGHT'], ['lights', 'LIGHTS & STEALTH'], ['searchlights', 'SEARCHLIGHTS'],
+      ['enemies', 'NIGHT RAIDERS'], ['ice', 'FROZEN WATER'], ['bonus', 'NIGHT BONUS']
     ];
-    const items = rows.map(([key, label], i) => [label + ': ' + (opts[key] ? 'ВКЛ' : 'ВЫКЛ'), () => {
+    const items = rows.map(([key, label], i) => [label + ': ' + (opts[key] ? 'ON' : 'OFF'), () => {
       opts[key] = !opts[key];
       saveJSON('tank2026_night', opts);
       this.showMenu('night', i);
@@ -1363,7 +1363,7 @@ class Game {
   startLocalBig(layoutName = 'big') {
     const pads = this.pads.length;
     if (pads === 0) {
-      this.setNetStatus('ПОДКЛЮЧИТЕ ГЕЙМПАД');
+      this.setNetStatus('CONNECT A GAMEPAD');
       return;
     }
     this.startNewGame(true, layoutName, 2 + Math.min(2, pads));
@@ -1424,7 +1424,7 @@ class Game {
     const el = document.getElementById('records-table');
     el.innerHTML = '';
     if (!this.records.length) {
-      el.textContent = 'ПОКА ПУСТО';
+      el.textContent = 'NO RECORDS YET';
       return;
     }
     this.records.forEach((r, i) => {
@@ -2561,7 +2561,7 @@ class Game {
       this.spawnTankDebris(cx + 10, cy - 8, ['#7a1420', '#4a0a12', '#ff6b6b']);
       this.spawnRandomPowerUp(enemy.x, enemy.y);
       this.spawnRandomPowerUp(enemy.x + 26, enemy.y + 26);
-      this.floatingScores.push(new FloatingScore(cx, cy - 20, 0, { text: 'БОСС УНИЧТОЖЕН', color: '#ffd54f', duration: 2.5, rise: 10 }));
+      this.floatingScores.push(new FloatingScore(cx, cy - 20, 0, { text: 'BOSS DESTROYED', color: '#ffd54f', duration: 2.5, rise: 10 }));
       this.conquestStatsAdd('bosses');
     }
     this.enemies.splice(index, 1);
@@ -2987,12 +2987,12 @@ class Game {
 
   netErrorText(err) {
     const type = err && err.type;
-    if (type === 'peer-unavailable') return 'КОД НЕ НАЙДЕН';
-    if (type === 'timeout') return 'НЕТ ОТВЕТА';
-    if (type === 'full') return 'КОМНАТА ЗАНЯТА';
-    if (type === 'browser-incompatible') return 'БРАУЗЕР НЕ ПОДДЕРЖИВАЕТ';
-    if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(type)) return 'СЕРВЕР НЕДОСТУПЕН';
-    return 'ОШИБКА СВЯЗИ';
+    if (type === 'peer-unavailable') return 'CODE NOT FOUND';
+    if (type === 'timeout') return 'NO RESPONSE';
+    if (type === 'full') return 'ROOM IS FULL';
+    if (type === 'browser-incompatible') return 'BROWSER NOT SUPPORTED';
+    if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(type)) return 'SERVER UNAVAILABLE';
+    return 'CONNECTION ERROR';
   }
 
   closeNet() {
@@ -3007,7 +3007,7 @@ class Game {
 
   hostOnline(big = false, conquest = false) {
     if (typeof Peer === 'undefined') {
-      this.setNetStatus('СЕРВЕР НЕДОСТУПЕН');
+      this.setNetStatus('SERVER UNAVAILABLE');
       return;
     }
     this.stopDemo();
@@ -3022,11 +3022,11 @@ class Game {
     document.getElementById('net-code').textContent = '';
     this.showMenu(big ? 'lobby' : 'hosting');
     this.renderLobby();
-    this.setNetStatus('СОЗДАНИЕ', true);
+    this.setNetStatus('CREATING ROOM', true);
     net.host(code => {
       if (this.net !== net) return;
       document.getElementById('net-code').textContent = code;
-      this.setNetStatus('ЖДЁМ ИГРОКОВ', true);
+      this.setNetStatus('WAITING FOR PLAYERS', true);
     }, peer => {
       if (this.net !== net) return;
       this.onGuestJoined(peer);
@@ -3066,7 +3066,7 @@ class Game {
     const net = this.net;
     if (!net || !net.isHost || !net.big) return;
     if (net.peers.length === 0) {
-      this.setNetStatus('НУЖЕН ЕЩЁ ИГРОК');
+      this.setNetStatus('NEED ONE MORE PLAYER');
       return;
     }
     net.locked = true;
@@ -3110,11 +3110,11 @@ class Game {
     if (this.menuName !== 'join') return;
     const code = document.getElementById('net-join-code').value.trim().toUpperCase();
     if (code.length < 4) {
-      this.setNetStatus('ВВЕДИТЕ КОД');
+      this.setNetStatus('ENTER THE CODE');
       return;
     }
     if (typeof Peer === 'undefined') {
-      this.setNetStatus('СЕРВЕР НЕДОСТУПЕН');
+      this.setNetStatus('SERVER UNAVAILABLE');
       return;
     }
     this.stopDemo();
@@ -3122,7 +3122,7 @@ class Game {
     const net = new NetSession(this, false);
     this.net = net;
     this.guestBig = false;
-    this.setNetStatus('ПОДКЛЮЧЕНИЕ', true);
+    this.setNetStatus('CONNECTING', true);
     net.join(code, () => {
       if (this.net !== net) return;
       this.online = true;
@@ -3131,7 +3131,7 @@ class Game {
       net.send({ t: 'hello', name: this.playerName });
       this.showMenu('waiting');
       this.renderLobby([]);
-      this.setNetStatus('ЖДЁМ ХОСТА', true);
+      this.setNetStatus('WAITING FOR HOST', true);
     }, err => {
       if (this.net !== net) return;
       this.closeNet();
@@ -3142,7 +3142,7 @@ class Game {
   requestRestartOnline() {
     if (this.isGuest()) {
       this.net.send({ t: 'cmd', c: 'again' });
-      this.setNetStatus('ЖДЁМ ХОСТА', true);
+      this.setNetStatus('WAITING FOR HOST', true);
     } else {
       this.restartOnline();
     }
@@ -3161,14 +3161,14 @@ class Game {
   onNetLost() {
     const host = this.playerNames && this.playerNames[0];
     const partner = this.net && this.net.isHost ? (this.playerNames && this.playerNames[1]) : host;
-    this.leaveOnline(partner ? partner + ' ОТКЛЮЧИЛСЯ' : 'СВЯЗЬ ПОТЕРЯНА');
+    this.leaveOnline(partner ? partner + ' DISCONNECTED' : 'CONNECTION LOST');
   }
 
   // Host: one guest left
   onGuestLeft(peer) {
     const name = peer.name || this.defaultName(peer.slot || 1);
     if (!this.net.big) {
-      this.leaveOnline(name + ' ОТКЛЮЧИЛСЯ');
+      this.leaveOnline(name + ' DISCONNECTED');
       return;
     }
     if (!this.net.locked) {
@@ -3176,7 +3176,7 @@ class Game {
       if (this.playerNames) this.playerNames[peer.slot] = undefined;
       this.online = this.net.peers.length > 0;
       this.renderLobby();
-      this.setNetStatus(name + ' ВЫШЕЛ');
+      this.setNetStatus(name + ' LEFT');
       return;
     }
     // Mid-game: that tank is out, the others play on
@@ -3189,7 +3189,7 @@ class Game {
       }
       p.lives = 0;
       this.floatingScores.push(new FloatingScore(p.spawnX + 13, p.spawnY + 10, 0, {
-        text: name + ' ВЫШЕЛ', color: '#ff5252', duration: 3, rise: 8
+        text: name + ' LEFT', color: '#ff5252', duration: 3, rise: 8
       }));
     }
     this.updateHUD();
@@ -3408,7 +3408,7 @@ class Game {
     if (Array.isArray(s.ct)) {
       this.cities = s.ct.map(([id, x, y, hp, maxHp, alive, captured, owner, zx, zy, zw, zh, name, alarm, lampDead]) => ({
         id, x, y, w: 32, h: 32, hp, maxHp, alive: !!alive, captured: !!captured, owner,
-        zone: { x: zx, y: zy, w: zw, h: zh }, spawns: [], name: String(name || '').toUpperCase().replace(/[^A-ZА-ЯЁ0-9 \-]/g, '').slice(0, 12) || 'ГОРОД', alarm: alarm || 0, lampDead: !!lampDead
+        zone: { x: zx, y: zy, w: zw, h: zh }, spawns: [], name: String(name || '').toUpperCase().replace(/[^A-ZА-ЯЁ0-9 \-]/g, '').slice(0, 12) || 'CITY', alarm: alarm || 0, lampDead: !!lampDead
       }));
     }
     if (Array.isArray(s.b)) {
@@ -4402,7 +4402,7 @@ class Game {
         garrison: c.garrison,
         spawnTimer: 1.5,
         alarm: 0,
-        name: c.name || 'ГОРОД',
+        name: c.name || 'CITY',
         group: c.group || null,   // Fortress: falls when every HQ of the group is destroyed
         boss: !!c.boss,
         bonusTimer: 20 + Math.random() * 15
@@ -4714,7 +4714,7 @@ class Game {
     p.lightsOff = !p.lightsOff;
     sound.playRicochet('shield');
     this.floatingScores.push(new FloatingScore(p.x + 13, p.y - 6, 0, {
-      text: p.lightsOff ? 'ФАРЫ ВЫКЛ' : 'ФАРЫ ВКЛ', color: '#fff59d', duration: 1, rise: 12
+      text: p.lightsOff ? 'LIGHTS OFF' : 'LIGHTS ON', color: '#fff59d', duration: 1, rise: 12
     }));
   }
 
@@ -4747,7 +4747,7 @@ class Game {
           city.spotCooldown = 6;
           sound.playBonusAlert();
           this.floatingScores.push(new FloatingScore(caught.x + 13, caught.y - 6, 0, {
-            text: 'ОБНАРУЖЕН!', color: '#ff5252', duration: 1.4, rise: 12
+            text: 'SPOTTED!', color: '#ff5252', duration: 1.4, rise: 12
           }));
         }
       });
@@ -5049,7 +5049,7 @@ class Game {
     if (left > 0) {
       this.addScore(1000, cx, cy - 10, player);
       this.floatingScores.push(new FloatingScore(cx, cy - 26, 0, {
-        text: 'ШТАБ ' + (members.length - left) + '/' + members.length, color: '#ffd54f', duration: 2, rise: 10
+        text: 'HQ ' + (members.length - left) + '/' + members.length, color: '#ffd54f', duration: 2, rise: 10
       }));
       members.forEach(c => { c.alarm = 10; });
       return;
@@ -5087,7 +5087,7 @@ class Game {
       sound.playPowerUpCollect('tank');
       this.addScore(2000, cx, cy - 10, player);
       this.floatingScores.push(new FloatingScore(cx, cy - 26, 0, {
-        text: city.name + (city.group ? ' ПАЛ' : ' ВЗЯТ'), color: PLAYER_COLORS[city.owner][0], duration: 3, rise: 10
+        text: city.name + (city.group ? ' HAS FALLEN' : ' TAKEN'), color: PLAYER_COLORS[city.owner][0], duration: 3, rise: 10
       }));
     }
     // The garrison gives up
@@ -5372,7 +5372,7 @@ class Game {
           this.spawnRing(e.x + 13, e.y + 13, '#ffeb3b', 44, 0.8);
           this.addLight(e.x + 13, e.y + 13, 60, 0.6, '255, 235, 120');
           this.floatingScores.push(new FloatingScore(e.x + 13, e.y - 4, 0, {
-            text: 'ПОДКРЕПЛЕНИЕ!', color: '#ffeb3b', duration: 1.6, rise: 14
+            text: 'BACKUP!', color: '#ffeb3b', duration: 1.6, rise: 14
           }));
           sound.playBonusAlert();
         }
@@ -5544,7 +5544,7 @@ class Game {
       ctx.font = '6px "Press Start 2P", monospace';
       ctx.textAlign = 'center';
       ctx.fillStyle = '#ff8a80';
-      ctx.fillText('БОСС', e.x + e.w / 2, e.y - 11);
+      ctx.fillText('BOSS', e.x + e.w / 2, e.y - 11);
     });
   }
 
@@ -5648,18 +5648,18 @@ class Game {
     const kills = {};
     this.players.forEach(p => Object.entries(p.kills || {}).forEach(([t, n]) => { kills[t] = (kills[t] || 0) + n; }));
     const total = Object.values(kills).reduce((a, b) => a + b, 0);
-    const names = { basic: 'ПРОСТЫЕ', fast: 'БЫСТРЫЕ', power: 'МОЩНЫЕ', armor: 'БРОНЯ', artillery: 'АРТИЛЛЕРИЯ', miner: 'МИНЁРЫ', scout: 'РАЗВЕДКА', boss: 'БОССЫ' };
+    const names = { basic: 'BASIC', fast: 'FAST', power: 'POWER', armor: 'ARMOR', artillery: 'ARTILLERY', miner: 'MINERS', scout: 'SCOUTS', boss: 'BOSSES' };
     const best = loadJSON('tank2026_best_path', 0);
     const isRecord = this.distanceRows > best;
     if (isRecord && !this.isGuest()) saveJSON('tank2026_best_path', this.distanceRows);
     const secs = Math.floor(s.time || 0);
     const rows = [
-      ['ПУТЬ', this.distanceRows + (isRecord ? '  НОВЫЙ РЕКОРД!' : '  (РЕКОРД ' + best + ')')],
-      ['ГОРОДА', String(this.citiesCaptured)],
-      ['КРЕПОСТИ', String(s.fortresses || 0)],
-      ['БОССЫ', String(s.bosses || 0)],
-      ['ВРАГИ', total + '  ' + Object.entries(kills).filter(([, n]) => n > 0).map(([t, n]) => (names[t] || t) + ' ' + n).join(' · ')],
-      ['ВРЕМЯ', Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0')]
+      ['DISTANCE', this.distanceRows + (isRecord ? '  NEW RECORD!' : '  (BEST ' + best + ')')],
+      ['CITIES', String(this.citiesCaptured)],
+      ['FORTRESSES', String(s.fortresses || 0)],
+      ['BOSSES', String(s.bosses || 0)],
+      ['ENEMIES', total + '  ' + Object.entries(kills).filter(([, n]) => n > 0).map(([t, n]) => (names[t] || t) + ' ' + n).join(' · ')],
+      ['TIME', Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0')]
     ];
     el.innerHTML = '';
     rows.forEach(([k, v], i) => {
