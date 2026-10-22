@@ -2143,6 +2143,7 @@ class Game {
     this.demo = false;
     sound.muted = this.demoSavedMute;
     clearTimeout(this.demoRestart);
+    this.stageToken++; // The demo stage's curtain callback must not start a real game behind the menu
     document.getElementById('game-overlay').classList.remove('demo-mode');
     this.enemies = [];
     this.bullets = [];
