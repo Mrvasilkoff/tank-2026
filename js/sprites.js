@@ -979,6 +979,14 @@ const Sprites = {
       if (isFlashing && (Math.floor(Date.now() / 120) % 2 === 0)) {
         // Blinking Red/White High-Value Bonus Tank
         primary = '#ff1744'; secondary = '#b71c1c'; highlight = '#ffffff'; darkShadow = '#5f0909';
+      } else if (type === 'boss') {
+        primary = '#7a1420'; secondary = '#4a0a12'; highlight = '#ff6b6b'; darkShadow = '#1f0306';
+      } else if (type === 'artillery') {
+        primary = '#6b7a3a'; secondary = '#4a5526'; highlight = '#b5c46a'; darkShadow = '#232a10';
+      } else if (type === 'miner') {
+        primary = '#4a4f57'; secondary = '#2e3238'; highlight = '#ffd54f'; darkShadow = '#15171a';
+      } else if (type === 'scout') {
+        primary = '#c8b27a'; secondary = '#9a8452'; highlight = '#f3e6c0'; darkShadow = '#4a3d22';
       } else if (type === 'basic') {
         primary = '#78909c'; secondary = '#455a64'; highlight = '#b0bec5'; darkShadow = '#263238';
       } else if (type === 'fast') {

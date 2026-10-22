@@ -9,7 +9,7 @@ const NET_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const NET_TIMEOUT_MS = 8000;
 
 // Sounds and visual effects triggered by the host simulation are replayed on the guests
-const NET_SOUNDS = ['playShoot', 'playHitSteel', 'playHitBrick', 'playExplosion', 'playPowerUpSpawn', 'playPowerUpCollect', 'playBonusAlert', 'playRicochet'];
+const NET_SOUNDS = ['playShoot', 'playHitSteel', 'playHitBrick', 'playExplosion', 'playPowerUpSpawn', 'playPowerUpCollect', 'playBonusAlert', 'playRicochet', 'playMortar'];
 const NET_FX = ['spawnBrickDebris', 'spawnRicochetSparks', 'spawnTankDebris', 'spawnMuzzleSparks', 'spawnSparkles', 'spawnSmokePuff', 'spawnRing', 'flashScreen', 'spawnLeafBurst'];
 
 class NetSession {

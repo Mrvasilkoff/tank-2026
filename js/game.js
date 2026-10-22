@@ -183,6 +183,7 @@ class GameMap {
 
         const tile = this.grid[r][c];
         if (tile === MapGenerator.TILES.BRICK) {
+          if (ignoreTank && ignoreTank.isBoss) continue; // The boss crushes brick walls
           // Check if the specific overlapping 8x8 sub-quadrant is solid
           if (this.isSubBrickSolid(c, r, x, y, w, h)) {
             return true;
@@ -634,6 +635,18 @@ const MAX_PLAYERS = 4;
 const FRIENDLY_FIRE_FREEZE = 3.0; // Classic Battle City: shooting your partner paralyses them
 const VICTORY_DELAY = 5.0;        // Seconds the cleared field stays on screen before the tally
 const DAY_LENGTH = 180;           // Conquest: seconds for a full day and night
+const BOSS_PROBE = { isBoss: true, type: 'boss', y: 0 }; // Stand-in for a boss when testing a spot
+
+// Conquest upgrades offered after each captured city (team-wide, stack up to max)
+const UPGRADES = [
+  { id: 'armor', icon: '🛡', label: 'БРОНЯ', desc: 'держит +1 попадание', max: 3 },
+  { id: 'speed', icon: '⚡', label: 'СКОРОСТЬ', desc: '+10% к ходу', max: 3 },
+  { id: 'reload', icon: '💥', label: 'ПУШКА', desc: '+1 снаряд, снаряды быстрее', max: 2 },
+  { id: 'lights', icon: '💡', label: 'ФАРЫ', desc: 'светят дальше ночью', max: 2 },
+  { id: 'boat', icon: '⛵', label: 'АМФИБИЯ', desc: 'лодка навсегда', max: 1 },
+  { id: 'shield', icon: '✨', label: 'ЩИТ', desc: '+3 с щита при появлении', max: 3 },
+  { id: 'life', icon: '❤', label: 'ЖИЗНЬ', desc: '+1 жизнь каждому', max: 99 }
+];
 
 // Player names (online play): up to 8 letters, digits, spaces or dashes
 function cleanPlayerName(name) {
@@ -679,6 +692,14 @@ class Game {
     this.camY = 0;             // Top of the screen in world px (0 outside conquest)
     this.cities = [];
     this.turrets = [];
+    this.shells = [];          // Artillery shells in flight
+    this.mines = [];
+    this.extraSpawns = 0;      // Reinforcements called by scouts
+    this.upgrades = {};        // Conquest upgrades picked so far
+    this.upgradeChoices = null;
+    this.upgradeIndex = 0;
+    this.cstats = null;        // Conquest results
+    this.bossSpawned = {};     // Fortress group -> boss already sent
     this.cityIdSeq = 0;
     this.worldShift = 0;
     this.distanceRows = 0;
@@ -753,6 +774,7 @@ class Game {
     window.addEventListener('resize', () => this.fitToScreen());
     this.renderReserveIcons(false);
     this.updateHUD();
+    if (!/selftest/.test(location.search)) this.startDemo();
   }
 
   createPlayers() {
@@ -762,6 +784,7 @@ class Game {
     for (let i = 0; i < count; i++) {
       const p = new PlayerTank(spawns[i].x * 16 + 3, spawns[i].y * 16 + 3, i);
       p.lives = DIFFICULTY[this.difficulty].lives;
+      p.upgradeHook = tank => this.applyUpgrades(tank);
       this.players.push(p);
     }
   }
@@ -899,6 +922,16 @@ class Game {
       if (this.isMenuActive()) {
         if (this.menuName === 'pause' && (e.code === 'KeyP' || e.code === 'Escape')) this.resumeFromPause();
         else this.handleMenuKey(e.code);
+        return;
+      }
+
+      if (this.state === 'UPGRADE' && this.upgradeChoices) {
+        const n = this.upgradeChoices.length;
+        const digit = ['Digit1', 'Digit2', 'Digit3', 'Numpad1', 'Numpad2', 'Numpad3'].indexOf(e.code) % 3;
+        if (digit >= 0 && ['Digit1', 'Digit2', 'Digit3', 'Numpad1', 'Numpad2', 'Numpad3'].includes(e.code)) this.pickUpgrade(digit);
+        else if (['ArrowLeft', 'KeyA', 'ArrowUp', 'KeyW'].includes(e.code)) this.upgradeIndex = (this.upgradeIndex + n - 1) % n;
+        else if (['ArrowRight', 'KeyD', 'ArrowDown', 'KeyS'].includes(e.code)) this.upgradeIndex = (this.upgradeIndex + 1) % n;
+        else if (['Enter', 'NumpadEnter', 'Space', 'KeyF', 'KeyJ'].includes(e.code)) this.pickUpgrade(this.upgradeIndex);
         return;
       }
 
@@ -1102,6 +1135,10 @@ class Game {
       records: [
         ['BACK', () => this.showMenu('main', 6)]
       ],
+      conquestOver: [
+        ['PLAY AGAIN', () => this.startNewGame(this.twoPlayers, 'conquest', this.playerCount)],
+        ['MENU', () => this.leaveOnline('')]
+      ],
       pause: [
         ['CONTINUE', () => this.resumeFromPause()],
         [sound.muted ? 'SOUND: OFF' : 'SOUND: ON', () => { this.toggleSound(); this.showMenu('pause', 1); }],
@@ -1138,6 +1175,8 @@ class Game {
     const container = document.getElementById('game-menu');
     container.innerHTML = '';
     container.classList.toggle('compact', name === 'settings');
+    document.getElementById('conquest-stats').classList.toggle('hidden',
+      !(name === 'conquestOver' || (name === 'onlineOver' && this.layout.conquest)));
     document.getElementById('records-table').classList.toggle('hidden', name !== 'records');
     if (name === 'records') this.renderRecords();
     this.menuItems.forEach(([label, action], i) => {
@@ -1260,6 +1299,7 @@ class Game {
   // RECORDS: top 10 scores with names, kept in this browser
   // -------------------------------------------------------------
   recordScores() {
+    if (this.demo) return;
     this.freshRecords = [];
     const names = this.online ? this.playerNames : null;
     this.players.forEach((p, i) => {
@@ -1332,6 +1372,12 @@ class Game {
   }
 
   toggleSound() {
+    if (this.demo) {
+      // The demo keeps the sound off; remember the choice for the real game
+      this.demoSavedMute = !this.demoSavedMute;
+      document.getElementById('btn-sound').innerHTML = '<span class="btn-icon">' + (this.demoSavedMute ? '🔇' : '🔊') + '</span>';
+      return;
+    }
     const isUnmuted = sound.toggleMute();
     document.getElementById('btn-sound').innerHTML = '<span class="btn-icon">' + (isUnmuted ? '🔊' : '🔇') + '</span>';
   }
@@ -1350,9 +1396,11 @@ class Game {
   // -------------------------------------------------------------
   // layoutName 'big' = wide map with two Eagles; playerCount defaults to 1 or 2
   startNewGame(twoPlayers = this.twoPlayers, layoutName = 'classic', playerCount = null) {
+    this.stopDemo();
     this.twoPlayers = twoPlayers;
     this.playerCount = playerCount || (twoPlayers ? 2 : 1);
     this.localBig = !this.online && this.playerCount > 2; // III/IV on gamepads
+    this.upgrades = {};
     document.getElementById('arcade-cabinet').classList.toggle('two-players', this.playerCount > 1);
     this.setLayout(layoutName);
     // Compact sidebar with four player blocks: big map, or three-four players anywhere
@@ -1566,7 +1614,7 @@ class Game {
   addScore(pts, x = null, y = null, player = null) {
     if (player) player.score += pts;
     const best = Math.max(0, ...this.players.map(p => p.score));
-    if (best > this.hiscore) {
+    if (best > this.hiscore && !this.demo) {
       this.hiscore = best;
       localStorage.setItem('tank1990_hiscore', this.hiscore);
     }
@@ -1704,6 +1752,7 @@ class Game {
           if (p.respawnTimer <= 0) {
             if (this.layout.conquest) this.findRespawnSpot(p);
             p.respawn();
+            this.applyRespawnUpgrades(p);
             this.spawnRing(p.x + 13, p.y + 13, PLAYER_COLORS[p.index][0], 26, 0.6);
             this.updateHUD();
           }
@@ -1731,6 +1780,7 @@ class Game {
     // Spawn enemy tanks
     if (this.layout.conquest) {
       this.dayTime += dt;
+      if (this.cstats) this.cstats.time += dt;
       const before = this.distanceRows;
       this.updateCamera(dt);
       if (this.distanceRows !== before) this.updateHUD();
@@ -1738,6 +1788,7 @@ class Game {
       this.updateCities(dt);
       this.updateTurrets(dt);
       this.updateCapturedCities(dt);
+      this.updateSpecialEnemies(dt);
     } else {
       this.handleEnemySpawning(dt);
     }
@@ -1746,7 +1797,8 @@ class Game {
     for (let i = this.spawnAnimations.length - 1; i >= 0; i--) {
       const sa = this.spawnAnimations[i];
       sa.timer -= dt;
-      if (sa.timer <= 0 && this.map.isBlocked(sa.x, sa.y, 26, 26, false, null, true)) {
+      const saSize = sa.big ? 52 : 26;
+      if (sa.timer <= 0 && this.map.isBlocked(sa.x, sa.y, saSize, saSize, false, sa.big ? BOSS_PROBE : null, true)) {
         sa.timer = 0.3; // A tank is standing on the spawn point: wait instead of spawning inside it
       } else if (sa.timer <= 0) {
         // Spawn actual tank now
@@ -1755,6 +1807,7 @@ class Game {
         enemy.speed *= diff.speed;
         enemy.bulletSpeed *= diff.bullet;
         enemy.reaction = diff.reaction;
+        if (enemy.isBoss) this.crushBricks(enemy);
         if (sa.homeCity) {
           enemy.homeCity = sa.homeCity;
           const city = this.cities.find(c => c.id === sa.homeCity);
@@ -1845,6 +1898,7 @@ class Game {
 
   // Current controls of a player: { dir, fire, tap }
   readInput(idx) {
+    if (this.demo) return this.demoInput(idx);
     if (this.online && idx >= 1) {
       // Remote guest driving this tank
       const r = this.remoteInputs[idx];
@@ -1878,6 +1932,73 @@ class Game {
       pad.firePressed = false; // A press fires once even if several physics steps run this frame
     }
     return { dir, fire, tap };
+  }
+
+  // -------------------------------------------------------------
+  // TITLE DEMO: two bots play a silent classic stage behind the menu
+  // -------------------------------------------------------------
+  startDemo() {
+    if (this.online || this.net) return;
+    if (!this.demo) this.demoSavedMute = sound.muted;
+    this.demo = true;
+    sound.muted = true;
+    sound.stopEngineHum();
+    this.demoBot = [{}, {}];
+    this.twoPlayers = true;
+    this.playerCount = 2;
+    this.localBig = false;
+    this.setLayout('classic');
+    this.createPlayers();
+    this.startStage(1 + Math.floor(Math.random() * 6), Math.floor(Math.random() * 9999999));
+    document.getElementById('stage-screen').classList.add('hidden');
+    this.state = 'PLAYING';
+    document.getElementById('game-overlay').classList.add('demo-mode');
+  }
+
+  stopDemo() {
+    if (!this.demo) return;
+    this.demo = false;
+    sound.muted = this.demoSavedMute;
+    clearTimeout(this.demoRestart);
+    document.getElementById('game-overlay').classList.remove('demo-mode');
+    this.enemies = [];
+    this.bullets = [];
+    this.spawnAnimations = [];
+    this.state = 'TITLE';
+  }
+
+  // Next demo round shortly after this one ended
+  restartDemo() {
+    this.state = 'TITLE';
+    clearTimeout(this.demoRestart);
+    this.demoRestart = setTimeout(() => { if (this.demo) this.startDemo(); }, 1500);
+  }
+
+  // Bot driver: line up with the nearest enemy and shoot, wander a little
+  demoInput(idx) {
+    const p = this.players[idx];
+    const bot = this.demoBot[idx] || (this.demoBot[idx] = {});
+    if (!p || p.dead) return { dir: null, fire: false, tap: false };
+    p.shieldTimer = Math.max(p.shieldTimer, 1); // Bots do not die: the demo keeps going
+    let target = null;
+    let best = Infinity;
+    this.enemies.forEach(e => {
+      const d = Math.hypot(e.x - p.x, e.y - p.y);
+      if (d < best) { best = d; target = e; }
+    });
+    bot.timer = (bot.timer || 0) - 1 / 60;
+    if (bot.timer <= 0 || !bot.dir) {
+      bot.timer = 0.4 + Math.random() * 0.8;
+      if (target) {
+        const dx = target.x - p.x;
+        const dy = target.y - p.y;
+        if (Math.abs(dx) < 8) bot.dir = dy < 0 ? 'UP' : 'DOWN';
+        else if (Math.abs(dy) < 8) bot.dir = dx < 0 ? 'LEFT' : 'RIGHT';
+        else bot.dir = Math.abs(dx) < Math.abs(dy) ? (dx < 0 ? 'LEFT' : 'RIGHT') : (dy < 0 ? 'UP' : 'DOWN');
+      }
+      if (!target || Math.random() < 0.2) bot.dir = DIR_ACTIONS[Math.floor(Math.random() * 4)];
+    }
+    return { dir: bot.dir, fire: Math.random() < 0.6, tap: false };
   }
 
   // -------------------------------------------------------------
@@ -1928,6 +2049,14 @@ class Game {
   handlePadUI() {
     if (this.awaitingKey) return;
     this.pads.forEach((pad, i) => {
+      if (this.state === 'UPGRADE' && this.upgradeChoices) {
+        const n = this.upgradeChoices.length;
+        if (pad.dirPressed === 'LEFT' || pad.dirPressed === 'UP') this.upgradeIndex = (this.upgradeIndex + n - 1) % n;
+        if (pad.dirPressed === 'RIGHT' || pad.dirPressed === 'DOWN') this.upgradeIndex = (this.upgradeIndex + 1) % n;
+        if (pad.confirmPressed) this.pickUpgrade(this.upgradeIndex);
+        pad.firePressed = false;
+        return;
+      }
       if (this.isMenuActive()) {
         if (pad.dirPressed === 'UP') this.handleMenuKey('ArrowUp');
         else if (pad.dirPressed === 'DOWN') this.handleMenuKey('ArrowDown');
@@ -2018,6 +2147,10 @@ class Game {
   }
 
   addBullet(b) {
+    if (Array.isArray(b)) {
+      b.forEach(x => this.addBullet(x));
+      return;
+    }
     if (!b) return;
     this.bullets.push(b);
     this.spawnMuzzleSparks(b.x + 3, b.y + 3, b.direction);
@@ -2120,6 +2253,19 @@ class Game {
       if (b.dead) {
         this.removeBullet(i);
         continue;
+      }
+
+      // 2. Player shell sets off a mine
+      if (b.owner === 'player' && this.mines.length) {
+        const mi = this.mines.findIndex(m => Math.abs(b.x + 3 - m.x) < 6 && Math.abs(b.y + 3 - m.y) < 6);
+        if (mi !== -1) {
+          this.explodeMine(this.mines[mi]);
+          this.mines.splice(mi, 1);
+          this.addScore(50, b.x, b.y, b.shooter);
+          b.dead = true;
+          this.removeBullet(i);
+          continue;
+        }
       }
 
       // 2a. Bullet vs fortress turrets (conquest)
@@ -2228,14 +2374,14 @@ class Game {
   }
 
   destroyEnemy(enemy, index, killer) {
-    const cx = enemy.x + 14;
-    const cy = enemy.y + 14;
+    const cx = enemy.x + (enemy.w || 26) / 2 + 1;
+    const cy = enemy.y + (enemy.h || 26) / 2 + 1;
     this.explosions.push(new ExplosionEffect(cx, cy, true));
     this.spawnTankDebris(cx, cy, ['#78909c', '#b0bec5', '#455a64', '#ff8a65']);
     this.spawnRing(cx, cy, '#ffcc80', 30, 0.45);
     this.addScreenShake(3.5);
     sound.playExplosion(true);
-    if (killer) killer.kills[enemy.type]++;
+    if (killer) killer.kills[enemy.type] = (killer.kills[enemy.type] || 0) + 1;
     this.addScore(enemy.points, cx, cy, killer);
 
     // Spawn power-up if bonus tank
@@ -2243,11 +2389,30 @@ class Game {
       this.spawnRandomPowerUp(enemy.x, enemy.y);
     }
 
+    if (enemy.isBoss) {
+      this.flashScreen();
+      this.addScreenShake(8);
+      this.spawnRing(cx, cy, '#ff1744', 70, 0.9);
+      this.spawnTankDebris(cx + 10, cy - 8, ['#7a1420', '#4a0a12', '#ff6b6b']);
+      this.spawnRandomPowerUp(enemy.x, enemy.y);
+      this.spawnRandomPowerUp(enemy.x + 26, enemy.y + 26);
+      this.floatingScores.push(new FloatingScore(cx, cy - 20, 0, { text: 'БОСС УНИЧТОЖЕН', color: '#ffd54f', duration: 2.5, rise: 10 }));
+      this.conquestStatsAdd('bosses');
+    }
     this.enemies.splice(index, 1);
     this.renderReserveIcons();
   }
 
   killPlayer(p) {
+    if (p.armor > 0) {
+      // Conquest armour upgrade: a plate breaks instead of the tank
+      p.armor--;
+      this.spawnRicochetSparks(p.x + 13, p.y + 13);
+      this.spawnRing(p.x + 13, p.y + 13, '#80deea', 22, 0.35);
+      sound.playRicochet('armor');
+      p.shieldTimer = Math.max(p.shieldTimer, 0.6); // A moment to get away
+      return;
+    }
     p.dead = true;
     p.lives--;
     p.respawnTimer = 1.5;
@@ -2379,7 +2544,7 @@ class Game {
           const e = this.enemies[i];
           this.explosions.push(new ExplosionEffect(e.x + 14, e.y + 14, true));
           this.spawnTankDebris(e.x + 14, e.y + 14, ['#78909c', '#b0bec5', '#455a64', '#ff8a65']);
-          player.kills[e.type]++;
+          player.kills[e.type] = (player.kills[e.type] || 0) + 1;
           this.addScore(e.points, e.x + 14, e.y + 14, player);
         }
         this.enemies = [];
@@ -2439,6 +2604,10 @@ class Game {
   }
 
   triggerStageComplete() {
+    if (this.demo) {
+      this.restartDemo();
+      return;
+    }
     this.state = 'TALLY';
     this.tallyReady = false;
     sound.stopEngineHum();
@@ -2613,6 +2782,10 @@ class Game {
   }
 
   triggerGameOver() {
+    if (this.demo) {
+      this.restartDemo();
+      return;
+    }
     this.state = 'GAMEOVER';
     this.recordScores();
     sound.stopEngineHum();
@@ -2623,8 +2796,9 @@ class Game {
     setTimeout(() => {
       if (this.state !== 'GAMEOVER') return;
       this.setLogo('GAME', 'OVER');
+      if (this.layout.conquest) this.renderConquestStats();
       if (this.online) this.showMenu('onlineOver');
-      else if (this.layout.conquest) this.showMenu('conquest', this.localBig ? 2 : (this.twoPlayers ? 1 : 0));
+      else if (this.layout.conquest) this.showMenu('conquestOver');
       else this.showMenu('main', this.localBig ? 2 : (this.twoPlayers ? 1 : 0));
       document.getElementById('game-overlay').classList.remove('hidden');
       this.gameOverText = null;
@@ -2665,6 +2839,7 @@ class Game {
       this.setNetStatus('СЕРВЕР НЕДОСТУПЕН');
       return;
     }
+    this.stopDemo();
     this.closeNet();
     const net = new NetSession(this, true, big ? MAX_PLAYERS - 1 : 1);
     net.big = big;
@@ -2771,6 +2946,7 @@ class Game {
       this.setNetStatus('СЕРВЕР НЕДОСТУПЕН');
       return;
     }
+    this.stopDemo();
     this.closeNet();
     const net = new NetSession(this, false);
     this.net = net;
@@ -2893,6 +3069,7 @@ class Game {
     this.showMenu('main', 4);
     this.setNetStatus(message);
     document.getElementById('game-overlay').classList.remove('hidden');
+    this.startDemo();
   }
 
   onNetMessage(msg, peer) {
@@ -2912,6 +3089,7 @@ class Game {
         this.updateHUD();
       } else if (msg.t === 'cmd') {
         if (msg.c === 'pause') this.togglePause();
+        else if (msg.c === 'pick' && this.state === 'UPGRADE') this.pickUpgrade(msg.i | 0);
         else if (msg.c === 'next' && this.state === 'TALLY') this.nextStage();
         else if (msg.c === 'again' && this.state === 'GAMEOVER') this.restartOnline();
       }
@@ -2987,8 +3165,13 @@ class Game {
       dn: Math.round((this.dayTime || 0) * 10) / 10,
       ca: this.map.chunkArchetypes || null,
       tu: this.turrets.map(t => [t.x, t.y, t.dir, t.alive ? 1 : 0, r(t.flash)]),
+      sl: this.shells.map(s => [r(s.fx), r(s.fy), r(s.tx), r(s.ty), r(s.t), s.dur]),
+      mn: this.mines.map(m => [r(m.x), r(m.y), r(m.arm)]),
       wo: this.worldShift,
       cq: this.layout.conquest ? [this.distanceRows, this.citiesCaptured] : null,
+      cs: this.cstats,
+      up: this.upgrades,
+      uc: this.state === 'UPGRADE' ? this.upgradeChoices : null,
       ct: this.cities.map(c => [c.id, c.x, c.y, c.hp, c.maxHp, c.alive ? 1 : 0, c.captured ? 1 : 0, c.owner, c.zone.x, c.zone.y, c.zone.w, c.zone.h, c.name, r(c.alarm)]),
       b: this.bases.map(b => [b.x, b.y, b.alive, r(b.shovelTimer), b.shovelFlashing, b.hp]),
       p: this.players.map(p => ({
@@ -2996,12 +3179,13 @@ class Game {
         shieldTimer: r(p.shieldTimer), shieldPhase: r(p.shieldPhase), hasBoat: p.hasBoat, dead: p.dead,
         frozenTimer: r(p.frozenTimer), recoil: r(p.recoil), muzzleFlash: r(p.muzzleFlash),
         lastBarrelSide: p.lastBarrelSide, lives: p.lives, score: p.score, kills: p.kills,
-        moving: p.moving, index: p.index, spawnX: p.spawnX, spawnY: p.spawnY, w: p.w, h: p.h
+        moving: p.moving, index: p.index, spawnX: p.spawnX, spawnY: p.spawnY, w: p.w, h: p.h, armor: p.armor || 0
       })),
       e: this.enemies.map(e => ({
         x: r(e.x), y: r(e.y), direction: e.direction, type: e.type, trackAnim: e.trackAnim, trackPos: r(e.trackPos),
         isFlashing: e.isFlashing, hp: e.hp, hasBoat: e.hasBoat, recoil: r(e.recoil),
-        muzzleFlash: r(e.muzzleFlash), moving: e.moving, w: e.w, h: e.h, ghostTimer: r(e.ghostTimer || 0)
+        muzzleFlash: r(e.muzzleFlash), moving: e.moving, w: e.w, h: e.h, ghostTimer: r(e.ghostTimer || 0),
+        isBoss: !!e.isBoss, maxHp: e.maxHp
       })),
       bu: this.bullets.map(b => ({ x: r(b.x), y: r(b.y), direction: b.direction, owner: b.owner, speed: b.speed })),
       pu: this.powerups.map(p => ({ x: p.x, y: p.y, type: p.type, life: r(Math.min(p.life, 999)), blinkTimer: r(p.blinkTimer) })), // Infinity is not JSON
@@ -3036,10 +3220,15 @@ class Game {
     if (typeof s.cy === 'number') this.camY = s.cy;
     if (typeof s.dn === 'number') this.dayTime = s.dn;
     if (Array.isArray(s.ca)) this.map.chunkArchetypes = s.ca;
+    if (Array.isArray(s.sl)) this.shells = s.sl.map(([fx, fy, tx, ty, t, dur]) => ({ fx, fy, tx, ty, t, dur }));
+    if (Array.isArray(s.mn)) this.mines = s.mn.map(([x, y, arm]) => ({ x, y, arm }));
     if (Array.isArray(s.tu)) {
       this.turrets = s.tu.map(([x, y, dir, alive, flash]) => ({ x, y, w: 24, h: 24, dir, alive: !!alive, flash }));
     }
     if (Array.isArray(s.cq)) [this.distanceRows, this.citiesCaptured] = s.cq;
+    if (s.cs && typeof s.cs === 'object') this.cstats = { time: +s.cs.time || 0, fortresses: s.cs.fortresses | 0, bosses: s.cs.bosses | 0 };
+    if (s.up && typeof s.up === 'object') this.upgrades = s.up;
+    if (Array.isArray(s.uc)) this.upgradeChoices = s.uc.filter(id => UPGRADES.some(x => x.id === id));
     if (Array.isArray(s.ct)) {
       this.cities = s.ct.map(([id, x, y, hp, maxHp, alive, captured, owner, zx, zy, zw, zh, name, alarm]) => ({
         id, x, y, w: 32, h: 32, hp, maxHp, alive: !!alive, captured: !!captured, owner,
@@ -3094,6 +3283,9 @@ class Game {
       this.showStageCurtain(u.stage);
       sound.stopEngineHum();
       sound.playStageStart(() => {});
+    } else if (u.u === 'upgrade') {
+      this.upgradeChoices = Array.isArray(u.choices) ? u.choices.filter(id => UPGRADES.some(x => x.id === id)) : null;
+      this.upgradeIndex = 0;
     } else if (u.u === 'open') {
       this.openStageCurtain();
     } else if (u.u === 'tally') {
@@ -3988,6 +4180,11 @@ class Game {
   initConquest() {
     this.cities = [];
     this.turrets = [];
+    this.shells = [];
+    this.mines = [];
+    this.extraSpawns = 0;
+    this.bossSpawned = {};
+    this.cstats = { time: 0, fortresses: 0, bosses: 0 };
     this.lastCaptured = null;
     this.dayTime = 0;
     this.worldShift = 0;
@@ -4089,6 +4286,9 @@ class Game {
     this.cities = this.cities.filter(c => c.zone.y < limit);
     this.turrets.forEach(t => { t.y += dy; });
     this.turrets = this.turrets.filter(t => t.y < limit);
+    this.shells.forEach(s => { s.fy += dy; s.ty += dy; });
+    this.mines.forEach(m => { m.y += dy; });
+    this.mines = this.mines.filter(m => m.y < limit);
     this.adoptChunkContent();
   }
 
@@ -4114,8 +4314,10 @@ class Game {
       this.spawnAnimations.filter(s => !s.homeCity).length;
     const maxRoaming = Math.max(2, Math.min(7, 3 + Math.floor(this.distanceRows / 70)) + diff.extraOnScreen);
     this.conquestSpawnTimer -= dt;
-    if (this.conquestSpawnTimer > 0 || roaming >= maxRoaming) return;
-    this.conquestSpawnTimer = Math.max(1.2, 3.4 - this.distanceRows / 220);
+    const called = this.extraSpawns > 0; // Scouts' reinforcements come regardless of the limits
+    if (!called && (this.conquestSpawnTimer > 0 || roaming >= maxRoaming)) return;
+    if (called) this.extraSpawns--;
+    else this.conquestSpawnTimer = Math.max(1.2, 3.4 - this.distanceRows / 220);
 
     // Just above the top of the screen, on free ground outside captured land
     for (let attempt = 0; attempt < 20; attempt++) {
@@ -4149,6 +4351,12 @@ class Game {
     } else {
       const pick = this.conquestPool.list[Math.floor(Math.random() * this.conquestPool.list.length)];
       config = Object.assign({}, pick, { isFlashing: false });
+      // Special conquest tanks appear the further you get
+      const roll = Math.random();
+      const d = this.distanceRows;
+      if (d > 20 && roll < 0.12) config = { type: 'scout', hp: 1, points: 150, isFlashing: false };
+      else if (d > 30 && roll < 0.22) config = { type: 'artillery', hp: 2, points: 300, isFlashing: false };
+      else if (d > 50 && roll < 0.32) config = { type: 'miner', hp: 1, points: 250, isFlashing: false };
     }
     this.conquestSpawnCount++;
     if (this.conquestSpawnCount % 7 === 0) config.isFlashing = true;
@@ -4165,10 +4373,22 @@ class Game {
   updateCities(dt) {
     this.cities.forEach(city => {
       if (!city.alive) return;
+      // A fortress sends out its boss once, when the players come close
+      if (city.boss && city.group && !this.bossSpawned[city.group] &&
+          city.zone.y + city.zone.h > this.camY && city.zone.y < this.camY + this.viewH() - 64) {
+        const spot = this.findBossSpot(city.zone);
+        if (spot) {
+          const { x, y } = spot;
+          this.bossSpawned[city.group] = true;
+          const hp = 20 + 2 * this.conquestStage();
+          this.spawnAnimations.push({ x, y, config: { type: 'boss', hp, points: 3000, isFlashing: false }, timer: 1.6, phase: 0, homeCity: city.id, big: true });
+          sound.playBonusAlert();
+        }
+      }
       if (city.alarm > 0) city.alarm -= dt;
       const near = city.y > this.camY - 160 && city.y < this.camY + this.viewH() + 32;
       if (!near) return;
-      const defenders = this.enemies.filter(e => e.homeCity === city.id).length +
+      const defenders = this.enemies.filter(e => e.homeCity === city.id && !e.isBoss).length +
         this.spawnAnimations.filter(s => s.homeCity === city.id).length;
       // More defenders when players are inside the city, and a call for help when the HQ is hit
       const intruder = this.players.some(p => !p.dead && this.inZone(city, p.x + 13, p.y + 13));
@@ -4226,7 +4446,7 @@ class Game {
       const d = DIRS[t.direction] || DIRS.UP;
       const cx = t.x + 13;
       const cy = t.y + 13;
-      const reach = t.type === 'player' ? 90 : 60;
+      const reach = t.type === 'player' ? 90 * (1 + 0.35 * ((this.upgrades && this.upgrades.lights) || 0)) : 60;
       const a = Math.atan2(d.dy, d.dx);
       n.save();
       n.beginPath();
@@ -4435,6 +4655,7 @@ class Game {
     });
     members.forEach(c => { c.alive = true; this.captureCity(c, player, c !== city); });
     this.addScore(5000, cx, cy - 20, player);
+    this.conquestStatsAdd('fortresses');
   }
 
   // Headquarters destroyed: the city and its land become the players'
@@ -4466,6 +4687,11 @@ class Game {
     }
     this.spawnAnimations = this.spawnAnimations.filter(s => s.homeCity !== city.id);
     this.updateHUD();
+    if (!quiet) {
+      // Armour plates refill, then the team picks an upgrade
+      this.players.forEach(p => { if (!p.dead) p.armor = this.upgrades.armor || 0; });
+      this.offerUpgrade();
+    }
   }
 
   // Respawn on free ground near the bottom middle of the screen
@@ -4692,6 +4918,355 @@ class Game {
     });
   }
 
+  // -------------------------------------------------------------
+  // CONQUEST ENEMIES WITH SPECIAL TRICKS: artillery shells, mines, scouts' calls
+  // -------------------------------------------------------------
+  updateSpecialEnemies(dt) {
+    this.enemies.forEach(e => {
+      if (e.dead || this.isFrozen || e.stunTimer > 0) return;
+      const target = this.nearestAlivePlayer(e);
+      if (!target) return;
+      const dist = Math.hypot(target.x - e.x, target.y - e.y);
+      const onScreen = e.y + 26 > this.camY;
+
+      if (e.type === 'artillery') {
+        if (e.artTimer === undefined) e.artTimer = 2 + Math.random() * 2;
+        e.artTimer -= dt;
+        if (e.artTimer <= 0 && dist < 230 && onScreen) {
+          e.artTimer = (4 + Math.random() * 1.5) * (e.reaction || 1);
+          // Aims a little ahead of a moving tank
+          const lead = target.moving ? 20 : 0;
+          const d = DIRS[target.direction] || DIRS.UP;
+          this.shells.push({
+            fx: e.x + 13, fy: e.y + 13,
+            tx: target.x + 13 + d.dx * lead + (Math.random() - 0.5) * 16,
+            ty: target.y + 13 + d.dy * lead + (Math.random() - 0.5) * 16,
+            t: 0, dur: 1.3
+          });
+          e.recoil = 2.5;
+          sound.playMortar();
+        }
+      } else if (e.type === 'miner') {
+        if (e.mineTimer === undefined) e.mineTimer = 2.5;
+        e.mineTimer -= dt;
+        if (e.mineTimer <= 0 && e.moving && onScreen) {
+          e.mineTimer = 4 + Math.random() * 3;
+          const d = DIRS[e.direction] || DIRS.UP;
+          if (this.mines.length < 14) this.mines.push({ x: e.x + 13 - d.dx * 16, y: e.y + 13 - d.dy * 16, arm: 1.0, life: 45 });
+        }
+      } else if (e.type === 'scout') {
+        if (!e.called && dist < 170 && onScreen) {
+          e.called = true;
+          e.callTimer = 1.5;
+          this.spawnRing(e.x + 13, e.y + 13, '#ffeb3b', 44, 0.8);
+          this.addLight(e.x + 13, e.y + 13, 60, 0.6, '255, 235, 120');
+          this.floatingScores.push(new FloatingScore(e.x + 13, e.y - 4, 0, {
+            text: 'ПОДКРЕПЛЕНИЕ!', color: '#ffeb3b', duration: 1.6, rise: 14
+          }));
+          sound.playBonusAlert();
+        }
+        if (e.callTimer > 0) {
+          e.callTimer -= dt;
+          if (e.callTimer <= 0) this.extraSpawns = (this.extraSpawns || 0) + 2; // Two tanks arrive at once
+        }
+      }
+
+      // Boss crushes brick walls it drives into
+      if (e.isBoss && e.moving) this.crushBricks(e);
+    });
+
+    // Artillery shells land after their flight
+    for (let i = this.shells.length - 1; i >= 0; i--) {
+      const s = this.shells[i];
+      s.t += dt;
+      if (s.t < s.dur) continue;
+      this.shells.splice(i, 1);
+      this.artilleryImpact(s.tx, s.ty);
+    }
+
+    // Mines arm after a second and go off under a player's tank
+    for (let i = this.mines.length - 1; i >= 0; i--) {
+      const m = this.mines[i];
+      m.arm -= dt;
+      m.life -= dt;
+      if (m.life <= 0) {
+        this.mines.splice(i, 1);
+        continue;
+      }
+      if (m.arm > 0) continue;
+      const victim = this.players.find(p => !p.dead && Math.abs(p.x + 13 - m.x) < 14 && Math.abs(p.y + 13 - m.y) < 14);
+      if (victim) {
+        this.mines.splice(i, 1);
+        this.explodeMine(m);
+        if (victim.shieldTimer <= 0) this.killPlayer(victim);
+      }
+    }
+  }
+
+  artilleryImpact(x, y) {
+    this.explosions.push(new ExplosionEffect(x, y, true));
+    this.addScreenShake(3);
+    sound.playExplosion(false);
+    this.addScorch(x, y, 12);
+    // Blast: players close by (unless shielded) and brick around the point
+    this.players.forEach(p => {
+      if (!p.dead && p.shieldTimer <= 0 && Math.abs(p.x + 13 - x) < 20 && Math.abs(p.y + 13 - y) < 20) this.killPlayer(p);
+    });
+    const c0 = Math.floor((x - 12) / 16);
+    const c1 = Math.floor((x + 12) / 16);
+    const r0 = Math.floor((y - 12) / 16);
+    const r1 = Math.floor((y + 12) / 16);
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        if (r < 0 || c < 0 || r >= this.map.rows || c >= this.map.cols) continue;
+        if (this.map.grid[r][c] === MapGenerator.TILES.BRICK) {
+          this.map.grid[r][c] = MapGenerator.TILES.EMPTY;
+          this.map.brickMasks[r][c] = 0;
+          this.spawnBrickDebris(c * 16 + 8, r * 16 + 8);
+        }
+      }
+    }
+  }
+
+  explodeMine(m) {
+    this.explosions.push(new ExplosionEffect(m.x, m.y, true));
+    this.addScreenShake(3);
+    sound.playExplosion(false);
+    this.addScorch(m.x, m.y, 10);
+  }
+
+  // Free 52x52 place for the boss near the middle of its fortress (brick does not count: it crushes it)
+  findBossSpot(z) {
+    const cx = z.x + z.w / 2 - 26;
+    const cy = z.y + z.h / 2 - 26;
+    for (let ring = 0; ring <= 6; ring++) {
+      for (let dy = -ring; dy <= ring; dy++) {
+        for (let dx = -ring; dx <= ring; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+          const x = Math.round((cx + dx * 16 - 3) / 16) * 16 + 3;
+          const y = Math.round((cy + dy * 16 - 3) / 16) * 16 + 3;
+          if (x < 0 || y < 0 || x + 52 > this.map.pxW || y + 52 > this.map.pxH) continue;
+          if (!this.map.isBlocked(x, y, 52, 52, false, BOSS_PROBE, true)) return { x, y };
+        }
+      }
+    }
+    return null;
+  }
+
+  // Boss drives through brick: tiles under it crumble
+  crushBricks(t) {
+    const c0 = Math.max(0, Math.floor(t.x / 16));
+    const c1 = Math.min(this.map.cols - 1, Math.floor((t.x + t.w - 1) / 16));
+    const r0 = Math.max(0, Math.floor(t.y / 16));
+    const r1 = Math.min(this.map.rows - 1, Math.floor((t.y + t.h - 1) / 16));
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        if (this.map.grid[r][c] !== MapGenerator.TILES.BRICK) continue;
+        this.map.grid[r][c] = MapGenerator.TILES.EMPTY;
+        this.map.brickMasks[r][c] = 0;
+        this.spawnBrickDebris(c * 16 + 8, r * 16 + 8);
+        sound.playHitBrick();
+      }
+    }
+  }
+
+  // Shell in flight (with its shadow and a warning mark where it will land), and mines
+  renderShellsAndMines() {
+    const ctx = this.ctx;
+    const t = Date.now() / 1000;
+    this.mines.forEach(m => {
+      ctx.save();
+      ctx.fillStyle = '#20242a';
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#5d6674';
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+      if (m.arm <= 0) {
+        ctx.fillStyle = Math.floor(t * 4) % 2 ? '#ff1744' : '#6a0a12';
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, 1.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+    this.shells.forEach(s => {
+      const p = Math.min(1, s.t / s.dur);
+      const x = s.fx + (s.tx - s.fx) * p;
+      const gy = s.fy + (s.ty - s.fy) * p;
+      const h = Math.sin(p * Math.PI) * 46;
+      ctx.save();
+      // Warning mark
+      ctx.strokeStyle = `rgba(255, 60, 60, ${0.4 + p * 0.5})`;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 2]);
+      ctx.beginPath();
+      ctx.arc(s.tx, s.ty, 18 - p * 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Shadow on the ground, shell above it
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+      ctx.beginPath();
+      ctx.ellipse(x, gy, 3, 1.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffcc80';
+      ctx.shadowColor = '#ff9100';
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(x, gy - h, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+  }
+
+  // Health bar over the fortress boss
+  renderBossBars() {
+    const ctx = this.ctx;
+    this.enemies.forEach(e => {
+      if (!e.isBoss || e.dead) return;
+      const frac = Math.max(0, e.hp / (e.maxHp || e.hp || 1));
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+      ctx.fillRect(e.x, e.y - 8, e.w, 4);
+      ctx.fillStyle = frac > 0.5 ? '#ff5252' : frac > 0.25 ? '#ffab40' : '#ffeb3b';
+      ctx.fillRect(e.x + 0.5, e.y - 7.5, (e.w - 1) * frac, 3);
+      ctx.font = '6px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff8a80';
+      ctx.fillText('БОСС', e.x + e.w / 2, e.y - 11);
+    });
+  }
+
+  // -------------------------------------------------------------
+  // UPGRADES: after every captured city the team picks one of three
+  // -------------------------------------------------------------
+  offerUpgrade() {
+    const options = UPGRADES.filter(u => (this.upgrades[u.id] || 0) < u.max);
+    const choices = [];
+    while (choices.length < 3 && options.length) {
+      choices.push(options.splice(Math.floor(Math.random() * options.length), 1)[0].id);
+    }
+    if (!choices.length) return;
+    this.upgradeChoices = choices;
+    this.upgradeIndex = 0;
+    this.stateBeforeUpgrade = this.state;
+    this.state = 'UPGRADE';
+    sound.stopEngineHum();
+    this.netUi('upgrade', { choices });
+  }
+
+  pickUpgrade(i) {
+    if (this.state !== 'UPGRADE' || !this.upgradeChoices) return;
+    if (this.isGuest()) {
+      this.net.send({ t: 'cmd', c: 'pick', i });
+      return;
+    }
+    const id = this.upgradeChoices[Math.max(0, Math.min(this.upgradeChoices.length - 1, i | 0))];
+    this.upgrades[id] = (this.upgrades[id] || 0) + 1;
+    if (id === 'life') this.players.forEach(p => { p.lives++; });
+    this.players.forEach(p => {
+      if (p.dead) return;
+      p.upgradeTier(p.tier);            // Re-applies speed and gun upgrades
+      p.armor = this.upgrades.armor || 0; // Plates refilled
+      if (this.upgrades.boat) p.hasBoat = true;
+      this.spawnRing(p.x + 13, p.y + 13, '#80deea', 30, 0.5);
+    });
+    sound.playPowerUpCollect('star');
+    this.upgradeChoices = null;
+    this.state = this.stateBeforeUpgrade === 'PAUSED' ? 'PLAYING' : (this.stateBeforeUpgrade || 'PLAYING');
+    this.updateHUD();
+  }
+
+  // Applied by PlayerTank.upgradeTier (via upgradeHook) on top of the weapon tier
+  applyRespawnUpgrades(p) {
+    const u = this.upgrades || {};
+    p.armor = u.armor || 0;
+    if (u.shield) p.shieldTimer += 3 * u.shield;
+    if (u.boat) p.hasBoat = true;
+  }
+
+  applyUpgrades(p) {
+    const u = this.upgrades || {};
+    if (u.speed) p.speed *= 1 + 0.1 * u.speed;
+    if (u.reload) {
+      p.maxBullets += u.reload;
+      p.bulletSpeed *= 1 + 0.05 * u.reload;
+    }
+  }
+
+  // Upgrade cards over the field (also shown on online guests)
+  syncUpgradePanel() {
+    const panel = document.getElementById('upgrade-panel');
+    const show = this.state === 'UPGRADE' && this.upgradeChoices;
+    panel.classList.toggle('hidden', !show);
+    if (!show) {
+      this.upgradePanelKey = null;
+      return;
+    }
+    const key = this.upgradeChoices.join(',') + '|' + this.upgradeIndex;
+    if (key === this.upgradePanelKey) return;
+    this.upgradePanelKey = key;
+    const list = document.getElementById('upgrade-cards');
+    list.innerHTML = '';
+    this.upgradeChoices.forEach((id, i) => {
+      const u = UPGRADES.find(x => x.id === id);
+      const card = document.createElement('button');
+      card.className = 'upgrade-card' + (i === this.upgradeIndex ? ' selected' : '');
+      const level = (this.upgrades[id] || 0) + 1;
+      card.innerHTML = '<span class="uc-key">' + (i + 1) + '</span><span class="uc-icon">' + u.icon + '</span>' +
+        '<span class="uc-name"></span><span class="uc-desc"></span>';
+      card.querySelector('.uc-name').textContent = u.label + (u.max > 1 && u.max < 99 ? ' ' + level : '');
+      card.querySelector('.uc-desc').textContent = u.desc;
+      card.addEventListener('mouseenter', () => { this.upgradeIndex = i; });
+      card.addEventListener('click', () => { card.blur(); this.pickUpgrade(i); });
+      list.appendChild(card);
+    });
+  }
+
+  // -------------------------------------------------------------
+  // CONQUEST RESULTS
+  // -------------------------------------------------------------
+  conquestStatsAdd(key) {
+    if (!this.cstats) return;
+    this.cstats[key] = (this.cstats[key] || 0) + 1;
+  }
+
+  renderConquestStats() {
+    const el = document.getElementById('conquest-stats');
+    const s = this.cstats || {};
+    const kills = {};
+    this.players.forEach(p => Object.entries(p.kills || {}).forEach(([t, n]) => { kills[t] = (kills[t] || 0) + n; }));
+    const total = Object.values(kills).reduce((a, b) => a + b, 0);
+    const names = { basic: 'ПРОСТЫЕ', fast: 'БЫСТРЫЕ', power: 'МОЩНЫЕ', armor: 'БРОНЯ', artillery: 'АРТИЛЛЕРИЯ', miner: 'МИНЁРЫ', scout: 'РАЗВЕДКА', boss: 'БОССЫ' };
+    const best = loadJSON('tank2026_best_path', 0);
+    const isRecord = this.distanceRows > best;
+    if (isRecord && !this.isGuest()) saveJSON('tank2026_best_path', this.distanceRows);
+    const secs = Math.floor(s.time || 0);
+    const rows = [
+      ['ПУТЬ', this.distanceRows + (isRecord ? '  НОВЫЙ РЕКОРД!' : '  (РЕКОРД ' + best + ')')],
+      ['ГОРОДА', String(this.citiesCaptured)],
+      ['КРЕПОСТИ', String(s.fortresses || 0)],
+      ['БОССЫ', String(s.bosses || 0)],
+      ['ВРАГИ', total + '  ' + Object.entries(kills).filter(([, n]) => n > 0).map(([t, n]) => (names[t] || t) + ' ' + n).join(' · ')],
+      ['ВРЕМЯ', Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0')]
+    ];
+    el.innerHTML = '';
+    rows.forEach(([k, v], i) => {
+      const row = document.createElement('div');
+      row.className = 'cs-row' + (i === 0 && isRecord ? ' record' : '');
+      row.style.animationDelay = (i * 0.12) + 's';
+      const a = document.createElement('span');
+      a.className = 'cs-key';
+      a.textContent = k;
+      const b = document.createElement('span');
+      b.className = 'cs-val';
+      b.textContent = v;
+      row.appendChild(a);
+      row.appendChild(b);
+      el.appendChild(row);
+    });
+  }
+
   recordTreadMark(tank) {
     this.treadMarks.push({
       x: tank.x + 14,
@@ -4914,6 +5489,17 @@ class Game {
     ctx.restore();
   }
 
+  // Conquest armour plates left: small cyan pips over the tank
+  renderArmorPips(ctx) {
+    this.players.forEach(p => {
+      if (p.dead || !p.armor) return;
+      for (let k = 0; k < p.armor; k++) {
+        ctx.fillStyle = '#80deea';
+        ctx.fillRect(p.x + 13 - p.armor * 2.5 + k * 5, p.y - 5, 3.5, 2.5);
+      }
+    });
+  }
+
   renderBulletTrails() {
     const ctx = this.ctx;
     ctx.save();
@@ -5003,6 +5589,7 @@ class Game {
     this.renderTerritory();
     this.renderCities();
     this.renderTurrets();
+    if (this.mines.length || this.shells.length) this.renderShellsAndMines();
 
     // 2. Base Phoenix Eagle Monument (64x64 HD texture rendered at 32x32)
     this.bases.forEach(base => {
@@ -5069,7 +5656,9 @@ class Game {
     this.explosions.forEach(e => e.render(ctx));
     this.renderLights();
     this.renderPlayerBadges(ctx);
+    this.renderArmorPips(ctx);
     this.renderCityFlags();
+    this.renderBossBars();
 
     // 10. Floating Scores
     this.floatingScores.forEach(fs => fs.render(ctx));
@@ -5116,6 +5705,7 @@ class Game {
       }
       this.render();
       this.syncPauseMenu();
+      this.syncUpgradePanel();
       this.minimapTick = ((this.minimapTick || 0) + 1) % 6;
       if (this.minimapTick === 0) this.renderMinimap();
 
@@ -5135,4 +5725,10 @@ let game = null;
 window.addEventListener('DOMContentLoaded', () => {
   game = new Game();
   requestAnimationFrame(t => game.loop(t));
+  // ?selftest in the address runs the self-test bot (js/selftest.js)
+  if (/selftest/.test(location.search)) {
+    const s = document.createElement('script');
+    s.src = 'js/selftest.js';
+    document.body.appendChild(s);
+  }
 });

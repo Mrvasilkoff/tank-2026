@@ -334,6 +334,7 @@ class PlayerTank extends Tank {
       this.maxBullets = 2;
       this.canBreakTrees = true; // Demolishes steel barriers & mows down trees
     }
+    if (this.upgradeHook) this.upgradeHook(this); // Conquest upgrades on top of the tier
   }
 
   // keepUpgrades: next stage (weapon stars and boat stay); otherwise a respawn after death
@@ -466,6 +467,39 @@ class EnemyTank extends Tank {
       this.maxBullets = 1;
       this.changeDirTimer = 2.0 + Math.random() * 2.0;
       this.shootTimer = 0.8 + Math.random() * 1.2;
+    } else if (this.type === 'artillery') {
+      // Conquest: slow mortar carrier, lobs shells over walls (see Game.updateSpecialEnemies)
+      this.speed = 0.6;
+      this.bulletSpeed = 2.6;
+      this.maxBullets = 1;
+      this.changeDirTimer = 2.5 + Math.random() * 2.0;
+      this.shootTimer = 1.5 + Math.random() * 1.5;
+    } else if (this.type === 'miner') {
+      // Conquest: lays mines behind itself
+      this.speed = 1.15;
+      this.bulletSpeed = 3.0;
+      this.maxBullets = 1;
+      this.changeDirTimer = 1.2 + Math.random() * 1.5;
+      this.shootTimer = 1.0 + Math.random() * 1.2;
+    } else if (this.type === 'scout') {
+      // Conquest: very fast, calls reinforcements when it spots a player
+      this.speed = 1.55;
+      this.bulletSpeed = 3.4;
+      this.maxBullets = 1;
+      this.changeDirTimer = 0.8 + Math.random() * 1.0;
+      this.shootTimer = 0.9 + Math.random() * 1.0;
+    } else if (this.type === 'boss') {
+      // Fortress boss: twice the size, twin cannons and an all-round salvo
+      this.isBoss = true;
+      this.w = 52;
+      this.h = 52;
+      this.speed = 0.55;
+      this.bulletSpeed = 4.2;
+      this.maxBullets = 6;
+      this.changeDirTimer = 2.0;
+      this.shootTimer = 1.0;
+      this.salvoTimer = 5;
+      this.maxHp = this.hp;
     }
   }
 
@@ -586,6 +620,21 @@ class EnemyTank extends Tank {
 
     this.handleIceDrift(map);
 
+    // Boss: every few seconds a salvo in all four directions
+    if (this.isBoss) {
+      this.salvoTimer -= dt;
+      if (this.salvoTimer <= 0 && this.activeBullets <= this.maxBullets - 4) {
+        this.salvoTimer = (5 + Math.random() * 2) * (this.reaction || 1);
+        const cx = this.x + this.w / 2;
+        const cy = this.y + this.h / 2;
+        this.recoil = 2.5;
+        return ['UP', 'DOWN', 'LEFT', 'RIGHT'].map(d => {
+          this.activeBullets++;
+          return new Bullet('enemy', cx - 3 + DIRS[d].dx * 30, cy - 3 + DIRS[d].dy * 30, d, this.bulletSpeed, false, this);
+        });
+      }
+    }
+
     // AI Shell Firing (authentic deliberate cadence)
     let bullet = null;
     if (this.shootTimer <= 0) {
@@ -690,6 +739,19 @@ class EnemyTank extends Tank {
     if (this.activeBullets >= this.maxBullets || this.dead) return null;
 
     const dir = DIRS[this.direction];
+    if (this.isBoss) {
+      // Twin cannons side by side
+      if (this.activeBullets > this.maxBullets - 2) return null;
+      const cx = this.x + this.w / 2;
+      const cy = this.y + this.h / 2;
+      this.recoil = 2.5;
+      this.muzzleFlash = 0.08;
+      return [-7, 7].map(side => {
+        this.activeBullets++;
+        return new Bullet('enemy', cx - 3 + dir.dx * 30 - dir.dy * side, cy - 3 + dir.dy * 30 + dir.dx * side,
+          this.direction, this.bulletSpeed, false, this);
+      });
+    }
     let bx = this.x + 10 + dir.dx * 14;
     let by = this.y + 10 + dir.dy * 14;
 
@@ -701,7 +763,7 @@ class EnemyTank extends Tank {
 
   takeDamage() {
     this.hp--;
-    this.stunTimer = 0.22; // Hit flinch / stun prevents instant counter-fire!
+    this.stunTimer = this.isBoss ? 0.04 : 0.22; // Hit flinch / stun prevents instant counter-fire!
     this.recoil = 2.5;
     if (this.hp <= 0) {
       this.dead = true;
@@ -715,6 +777,17 @@ class EnemyTank extends Tank {
     if (this.dead) return;
     ctx.save();
     if (this.ghostTimer > 0) ctx.globalAlpha *= 0.7; // Passing through another tank
+    if (this.isBoss) {
+      // Same tank drawing at double size
+      ctx.translate(this.x, this.y);
+      ctx.scale(2, 2);
+      Sprites.drawTank(ctx, -1, -1, {
+        type: 'boss', direction: this.direction, trackAnim: this.trackAnim, trackPos: this.trackPos,
+        armorHp: 4, hasBoat: this.hasBoat, recoil: this.recoil, muzzleFlash: this.muzzleFlash > 0
+      });
+      ctx.restore();
+      return;
+    }
     Sprites.drawTank(ctx, this.x - 1, this.y - 1, {
       type: this.type,
       direction: this.direction,
@@ -726,6 +799,32 @@ class EnemyTank extends Tank {
       recoil: this.recoil,
       muzzleFlash: this.muzzleFlash > 0
     });
+    // Marks of the conquest-only types
+    const cx = this.x + 13;
+    const cy = this.y + 13;
+    if (this.type === 'artillery') {
+      ctx.fillStyle = '#20240f';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#c9d77a';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    } else if (this.type === 'miner') {
+      for (let i = 0; i < 3; i++) {
+        ctx.fillStyle = i % 2 ? '#15171a' : '#ffd54f';
+        ctx.fillRect(cx - 4.5 + i * 3, cy - 1.5, 3, 3);
+      }
+    } else if (this.type === 'scout') {
+      ctx.strokeStyle = '#f3e6c0';
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(cx + 5, cy + 5);
+      ctx.lineTo(cx + 11, cy - 9);
+      ctx.stroke();
+      ctx.fillStyle = '#ff5252';
+      ctx.fillRect(cx + 10.3, cy - 10, 1.6, 1.6);
+    }
     ctx.restore();
   }
 }

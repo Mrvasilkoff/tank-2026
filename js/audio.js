@@ -409,6 +409,14 @@ class SoundEngine {
     }
   }
 
+  // Artillery firing: a hollow mortar thump
+  playMortar() {
+    if (this.muted || !this.ctx) return;
+    this.ensureContext();
+    this.blip('sine', 110, 0, 0.25, 0.25, 50);
+    this.noiseBurst(0, 0.15, 0.15, 'lowpass', 600, 150);
+  }
+
   // Distant rumble of the enemy tanks on the field (count = moving enemies)
   setEnemyEngine(count) {
     if (!this.ctx) return;
