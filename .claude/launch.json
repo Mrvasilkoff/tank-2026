@@ -6,7 +6,7 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": [
         "-c",
-        "import http.server as h\nclass H(h.SimpleHTTPRequestHandler):\n    def end_headers(self):\n        self.send_header('Cache-Control', 'no-store')\n        super().end_headers()\nh.ThreadingHTTPServer(('', 8765), H).serve_forever()"
+        "import http.server as h\nclass H(h.SimpleHTTPRequestHandler):\n    def end_headers(self):\n        self.send_header('Cache-Control', 'no-store')\n        super().end_headers()\nclass S(h.ThreadingHTTPServer):\n    request_queue_size = 64\n    daemon_threads = True\nS(('', 8765), H).serve_forever()"
       ],
       "port": 8765
     }

@@ -585,7 +585,7 @@ const MapGenerator = {
 
       let city = null;
       let citadel = null;
-      if (index >= 4 && index % 5 === 4) citadel = this.buildCitadel(grid, rng, stage); // Boss fortress
+      if (index >= 2 && (index - 2) % 4 === 0) citadel = this.buildCitadel(grid, rng, stage); // Boss fortress: screens 3, 7, 11...
       else if (index > 0 && rng() < (index === 1 ? 0.5 : 0.7)) city = this.buildCity(grid, rng, stage);
 
       if (!this.validateVerticalConnectivity(grid)) continue;
