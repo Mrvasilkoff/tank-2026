@@ -1392,3 +1392,76 @@ canvas#gameCanvas {
 #game-overlay.demo-mode {
   background: rgba(0, 0, 0, 0.62);
 }
+
+/* -------------------------------------------------------------
+   TV / fullscreen: no cabinet frame, playfield uses the whole screen
+   ------------------------------------------------------------- */
+body.fullscreen {
+  padding: 0;
+}
+
+body.fullscreen #arcade-cabinet {
+  padding: 4px 6px 6px;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: #07090c;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+body.fullscreen #arcade-header {
+  margin-bottom: 4px;
+}
+
+body.fullscreen #game-wrapper {
+  border-width: 3px;
+  border-radius: 4px;
+}
+
+/* -------------------------------------------------------------
+   Three-four players: wider sidebar, player cards in two columns,
+   readable from a sofa
+   ------------------------------------------------------------- */
+.big-mode #game-sidebar {
+  width: 150px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: min-content;
+  align-content: space-between;
+  column-gap: 4px;
+}
+
+.big-mode #game-sidebar > .hud-section:not(.player-status) {
+  grid-column: 1 / -1;
+}
+
+.big-mode .player-status {
+  padding: 4px 2px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.big-mode .player-status .hud-label {
+  font-size: 8px;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.big-mode .digit {
+  font-size: 14px;
+}
+
+.big-mode .star-slot {
+  font-size: 10px;
+}
+
+.big-mode .score-digit.pscore {
+  font-size: 8px;
+}
+
+.big-mode .enemy-counter-grid {
+  grid-template-columns: repeat(6, 12px);
+}
+

@@ -773,7 +773,9 @@ class Game {
     this.setupUI();
     this.showMenu('main');
     this.fitToScreen();
-    window.addEventListener('resize', () => this.fitToScreen());
+    const refit = () => { this.fitToScreen(); this.fitToScreen(); };
+    window.addEventListener('resize', refit);
+    document.addEventListener('fullscreenchange', refit);
     this.renderReserveIcons(false);
     this.updateHUD();
     if (!/selftest/.test(location.search)) this.startDemo();
@@ -824,21 +826,49 @@ class Game {
   fitToScreen() {
     const cabinet = document.getElementById('arcade-cabinet');
     const wrapper = document.getElementById('game-wrapper');
+    const header = document.getElementById('arcade-header');
+    // TV / fullscreen: no cabinet frame, the game takes the whole screen
+    const fullscreen = !!document.fullscreenElement ||
+      (window.innerWidth >= screen.width - 2 && window.innerHeight >= screen.height - 2);
+    document.body.classList.toggle('fullscreen', fullscreen);
+
     // Field is 480 CSS px tall; the big map is twice as wide
     const fieldW = 480 * this.layout.cols / 26;
     document.getElementById('canvas-container').style.width = fieldW + 'px';
     this.canvas.style.width = fieldW + 'px';
 
-    const chromeH = cabinet.getBoundingClientRect().height - wrapper.getBoundingClientRect().height;
-    const availW = window.innerWidth - 16 - 28;
-    const availH = window.innerHeight - 16 - chromeH;
-    const scale = Math.max(0.35, Math.min(availW / (fieldW + 92), availH / 492));
+    // Unscaled size of the playfield box: field + sidebar + wrapper borders
+    const sidebarW = parseFloat(getComputedStyle(document.getElementById('game-sidebar')).width) || 80;
+    const baseW = fieldW + sidebarW + 12;
+    const baseH = 480 + 12;
+    const px = el => {
+      const cs = getComputedStyle(el);
+      return {
+        x: parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth),
+        y: parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth)
+      };
+    };
+    const bodyPad = px(document.body);
+    const cabPad = px(cabinet);
+
+    // Header buttons grow on big screens so they stay usable from the sofa
+    const prevScale = parseFloat(wrapper.style.getPropertyValue('--ui-scale')) || 1;
+    header.style.zoom = Math.max(1, Math.min(2.2, prevScale * 0.65)).toFixed(2);
+
+    const chromeH = cabinet.getBoundingClientRect().height - wrapper.getBoundingClientRect().height - cabPad.y;
+    const availW = window.innerWidth - bodyPad.x - cabPad.x - 2;
+    const availH = window.innerHeight - bodyPad.y - cabPad.y - Math.max(0, chromeH) - 2;
+    const scale = Math.max(0.35, Math.min(availW / baseW, availH / baseH));
     wrapper.style.setProperty('--ui-scale', scale.toFixed(3));
 
+    // Canvas resolution follows the screen, capped so 4K TVs do not render huge buffers
     const dpr = window.devicePixelRatio || 1;
-    const renderScale = Math.min(6, Math.max(2, Math.ceil(480 * scale * dpr / 416)));
-    const bufW = this.layout.cols * 16 * renderScale;
-    const bufH = (this.layout.viewRows || this.layout.rows) * 16 * renderScale;
+    const cols = this.layout.cols;
+    const rows = this.layout.viewRows || this.layout.rows;
+    let renderScale = Math.min(6, Math.max(2, Math.ceil(480 * scale * dpr / 416)));
+    while (renderScale > 2 && cols * 16 * renderScale * rows * 16 * renderScale > 8e6) renderScale--;
+    const bufW = cols * 16 * renderScale;
+    const bufH = rows * 16 * renderScale;
     if (renderScale !== this.renderScale || this.canvas.width !== bufW || this.canvas.height !== bufH) {
       this.renderScale = renderScale;
       this.canvas.width = bufW;
@@ -1077,6 +1107,8 @@ class Game {
     document.getElementById('btn-sound').addEventListener('click', () => {
       this.toggleSound();
     });
+
+    document.getElementById('btn-fullscreen').addEventListener('click', () => this.toggleFullscreen());
 
     const crtBtn = document.getElementById('btn-crt');
     crtBtn.addEventListener('click', () => {
@@ -1381,6 +1413,15 @@ class Game {
     el.classList.toggle('net-wait', waiting);
   }
 
+  // Whole screen for TVs (Esc or the button again leaves it)
+  toggleFullscreen() {
+    if (document.fullscreenElement) {
+      if (document.exitFullscreen) document.exitFullscreen();
+    } else if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  }
+
   toggleSound() {
     if (this.demo) {
       // The demo keeps the sound off; remember the choice for the real game
@@ -1415,6 +1456,7 @@ class Game {
     this.setLayout(layoutName);
     // Compact sidebar with four player blocks: big map, or three-four players anywhere
     document.getElementById('arcade-cabinet').classList.toggle('big-mode', layoutName === 'big' || this.playerCount > 2);
+    this.fitToScreen(); // The four-player sidebar is wider
     this.stage = 1;
     this.gameOverText = null;
     this.createPlayers();
@@ -3253,7 +3295,12 @@ class Game {
     }
     this.players = s.p.map(d => make(PlayerTank, d));
     this.playerCount = this.players.length;
-    document.getElementById('arcade-cabinet').classList.toggle('big-mode', this.layoutName === 'big' || this.players.length > 2);
+    const cab = document.getElementById('arcade-cabinet');
+    const quad = this.layoutName === 'big' || this.players.length > 2;
+    if (cab.classList.contains('big-mode') !== quad) {
+      cab.classList.toggle('big-mode', quad);
+      this.fitToScreen();
+    }
     document.getElementById('arcade-cabinet').classList.toggle('two-players', this.players.length > 1);
     this.enemies = s.e.map(d => make(EnemyTank, d));
     this.bullets = s.bu.map(d => make(Bullet, d));
