@@ -687,6 +687,19 @@ function cleanPlayerName(name) {
   return String(name || '').toUpperCase().replace(/[^A-ZА-ЯЁ0-9 \-]/g, '').trim().slice(0, 8);
 }
 
+// Online room modes (ONLINE > CREATE GAME)
+const ONLINE_MODES = [
+  { big: false, conquest: false, label: 'CLASSIC', hint: '2 PLAYERS, ONE BASE TO DEFEND' },
+  { big: true, conquest: false, label: 'BIG MAP 2-4', hint: '2-4 PLAYERS, WIDE MAP WITH TWO BASES' },
+  { big: false, conquest: true, label: 'CONQUEST', hint: '2 PLAYERS, ENDLESS MARCH NORTH' },
+  { big: true, conquest: true, label: 'CONQUEST 2-4', hint: '2-4 PLAYERS, ENDLESS MARCH NORTH' }
+];
+
+function onlineModeLabel(big, conquest) {
+  const m = ONLINE_MODES.find(x => x.big === !!big && x.conquest === !!conquest);
+  return m.label.replace(' 2-4', '') + ' · ' + (big ? '2-4' : '2') + ' PLAYERS';
+}
+
 // Online chat: T opens the input; quick phrases on keys 1-4 or gamepad SELECT + d-pad
 const CHAT_MAX = 60;          // Characters per message
 const CHAT_LINE_TIME = 7000;  // ms a message stays on screen
@@ -992,7 +1005,7 @@ class Game {
       if (e.target && e.target.tagName === 'INPUT') {
         // Typing a room code
         if (e.code === 'Enter' || e.code === 'NumpadEnter') this.joinOnline();
-        if (e.code === 'Escape') this.showMenu('online', 2);
+        if (e.code === 'Escape') { this.closeNet(); this.showMenu('online', 1); }
         return;
       }
       // Online chat: T opens the input, 1-4 send a quick phrase (unless SETTINGS gave the key an action)
@@ -1244,8 +1257,7 @@ class Game {
         ['1 PLAYER', () => this.startNewGame(false, 'conquest')],
         ['2 PLAYERS', () => this.startNewGame(true, 'conquest')],
         ['3-4 PLAYERS', () => this.startLocalBig('conquest')],
-        ['ONLINE HOST', () => this.hostOnline(false, true)],
-        ['ONLINE HOST 4', () => this.hostOnline(true, true)],
+        ['ONLINE', () => this.showMenu('create', 2), false, 'PLAY CONQUEST WITH FRIENDS OVER THE INTERNET'],
         ['BACK', () => this.showMenu('main', 3)]
       ],
       settings: this.settingsMenuItems(),
@@ -1263,26 +1275,23 @@ class Game {
         ['EXIT', () => this.exitToTitle()]
       ],
       online: [
-        ['HOST', () => this.hostOnline(false)],
-        ['HOST 4', () => this.hostOnline(true)],
-        ['JOIN', () => this.showMenu('join')],
+        ['CREATE GAME', () => this.showMenu('create'), false, 'HOST A ROOM AND INVITE FRIENDS'],
+        ['JOIN GAME', () => this.showMenu('join'), false, "ENTER A FRIEND'S CODE OR OPEN THEIR LINK"],
         ['BACK', () => { this.closeNet(); this.showMenu('main', 4); }]
       ],
+      create: ONLINE_MODES.map(m => [m.label, () => this.hostOnline(m.big, m.conquest), false, m.hint])
+        .concat([['BACK', () => this.showMenu('online')]]),
       lobby: [
-        ['START', () => this.startBigOnline()],
-        ['COPY LINK', () => this.copyRoomLink()],
-        ['BACK', () => { this.closeNet(); this.showMenu('online', 1); }]
-      ],
-      hosting: [
-        ['COPY LINK', () => this.copyRoomLink()],
-        ['BACK', () => { this.closeNet(); this.showMenu('online'); }]
+        ['START', () => this.startOnline(), false, 'START WHEN EVERYONE IS HERE'],
+        ['COPY LINK', () => this.copyRoomLink(), false, 'THE LINK OPENS THE GAME RIGHT IN THIS ROOM'],
+        ['BACK', () => { const i = this.lobbyModeIndex(); this.closeNet(); this.showMenu('create', i); }, false, 'CLOSE THE ROOM']
       ],
       join: [
-        ['CONNECT', () => this.joinOnline()],
-        ['BACK', () => { this.closeNet(); this.showMenu('online', 2); }]
+        ['CONNECT', () => this.joinOnline(), false, 'TYPE OR PASTE THE CODE, THEN ENTER'],
+        ['BACK', () => { this.closeNet(); this.showMenu('online', 1); }]
       ],
       waiting: [
-        ['BACK', () => this.exitOnline()]
+        ['BACK', () => this.exitOnline(), false, 'LEAVE THE ROOM']
       ],
       onlineOver: [
         ['PLAY AGAIN', () => this.requestRestartOnline()],
@@ -1317,18 +1326,18 @@ class Game {
     const panel = document.getElementById('net-panel');
     const codeEl = document.getElementById('net-code');
     const input = document.getElementById('net-join-code');
-    panel.classList.toggle('hidden', !['online', 'hosting', 'lobby', 'join', 'waiting', 'settings'].includes(name));
+    panel.classList.toggle('hidden', !['online', 'lobby', 'join', 'waiting', 'settings'].includes(name));
     document.getElementById('net-name').classList.toggle('hidden', name !== 'online' && name !== 'settings');
-    document.getElementById('net-lobby').classList.toggle('hidden', !(name === 'lobby' || (name === 'waiting' && this.guestBig)));
-    codeEl.classList.toggle('hidden', name !== 'hosting' && name !== 'lobby');
+    document.getElementById('net-lobby').classList.toggle('hidden', name !== 'lobby' && name !== 'waiting');
+    codeEl.classList.toggle('hidden', name !== 'lobby');
     input.classList.toggle('hidden', name !== 'join');
     if (name === 'join') {
-      input.value = '';
-      setTimeout(() => input.focus(), 0);
+      input.value = this.lastJoinCode(); // The room joined last time, ready for CONNECT
+      setTimeout(() => { input.focus(); input.select(); }, 0);
     } else {
       input.blur();
     }
-    if (name === 'main' || name === 'online' || name === 'join' || name === 'records') this.setNetStatus('');
+    if (['main', 'online', 'create', 'join', 'records'].includes(name)) this.setNetStatus('');
     if (name === 'settings') {
       const n = this.pads.length;
       this.setNetStatus(this.awaitingKey ? 'PRESS A KEY' : (n ? 'GAMEPADS: ' + n : 'NO GAMEPAD FOUND'), !!this.awaitingKey);
@@ -1486,6 +1495,15 @@ class Game {
     this.menuIndex = index;
     Array.from(document.querySelectorAll('#game-menu .menu-option'))
       .forEach((o, i) => o.classList.toggle('selected', i === index));
+    const item = this.menuItems && this.menuItems[index];
+    document.getElementById('menu-hint').textContent = (item && item[3]) || '';
+  }
+
+  // CREATE GAME entry of the room being hosted (for BACK from the lobby)
+  lobbyModeIndex() {
+    const net = this.net;
+    if (!net) return 0;
+    return Math.max(0, ONLINE_MODES.findIndex(m => m.big === !!net.big && m.conquest === !!net.conquest));
   }
 
   handleMenuKey(code) {
@@ -3161,13 +3179,15 @@ class Game {
     this.remoteInputs = [];
     this.remoteTapsSeen = [];
     document.getElementById('net-code').textContent = '';
-    this.showMenu(big ? 'lobby' : 'hosting', big ? 1 : 0); // Cursor on COPY LINK
+    this.showMenu('lobby', 1); // Cursor on COPY LINK
     this.renderLobby();
     this.setNetStatus('CREATING ROOM', true);
-    net.host(code => {
+    const ownCode = this.roomCode();
+    net.host(ownCode, code => {
       if (this.net !== net) return;
       document.getElementById('net-code').textContent = code;
-      this.setNetStatus('WAITING FOR PLAYERS', true);
+      // The usual code was busy: this session runs on a one-off code
+      this.setNetStatus(code === ownCode ? 'WAITING FOR PLAYERS' : 'NEW CODE THIS TIME', true);
     }, peer => {
       if (this.net !== net) return;
       this.onGuestJoined(peer);
@@ -3177,6 +3197,25 @@ class Game {
       this.showMenu('online');
       this.setNetStatus(this.netErrorText(err));
     });
+  }
+
+  // The host's own room code: made once and kept, so a friend's saved link keeps working
+  roomCode() {
+    let code = '';
+    try {
+      code = localStorage.getItem('tank2026_room') || '';
+    } catch (e) {
+      // Storage unavailable: a new code every session
+    }
+    if (!/^[A-Z0-9]{5}$/.test(code)) {
+      code = NetSession.makeCode();
+      try {
+        localStorage.setItem('tank2026_room', code);
+      } catch (e) {
+        // Storage unavailable
+      }
+    }
+    return code;
   }
 
   onGuestJoined(peer) {
@@ -3190,22 +3229,14 @@ class Game {
     this.online = true;
     this.playerNames[slot] = peer.name;
     net.sendTo(peer, { t: 'welcome', slot, big: net.big });
-
-    if (!net.big) {
-      // Classic room: the game starts as soon as the partner is here
-      net.locked = true;
-      this.remoteInputs = [];
-      this.remoteTapsSeen = [];
-      this.startNewGame(true, net.conquest ? 'conquest' : 'classic');
-      return;
-    }
     this.renderLobby();
+    if (net.peers.length >= net.maxGuests) this.selectMenu(0); // Room full: cursor on START
   }
 
-  // Remove gaps in the slots (someone left the lobby) and start the wide-map game
-  startBigOnline() {
+  // Remove gaps in the slots (someone left the lobby) and start the game for everyone in the room
+  startOnline() {
     const net = this.net;
-    if (!net || !net.isHost || !net.big) return;
+    if (!net || !net.isHost) return;
     if (net.peers.length === 0) {
       this.setNetStatus('NEED ONE MORE PLAYER');
       return;
@@ -3215,12 +3246,13 @@ class Game {
     net.peers.sort((a, b) => a.slot - b.slot).forEach((peer, i) => {
       peer.slot = i + 1;
       this.playerNames[peer.slot] = peer.name;
-      net.sendTo(peer, { t: 'welcome', slot: peer.slot, big: true });
+      net.sendTo(peer, { t: 'welcome', slot: peer.slot, big: net.big });
     });
     this.remoteInputs = [];
     this.remoteTapsSeen = [];
     this.setLogo('TANK', '2026');
-    this.startNewGame(true, net.conquest ? 'conquest' : 'big', 1 + net.peers.length);
+    if (net.big) this.startNewGame(true, net.conquest ? 'conquest' : 'big', 1 + net.peers.length);
+    else this.startNewGame(true, net.conquest ? 'conquest' : 'classic');
   }
 
   // Names of everyone in the room (host's lobby screen, and sent to guests)
@@ -3231,20 +3263,26 @@ class Game {
     return names;
   }
 
-  renderLobby(names = null) {
+  renderLobby(names = null, info = null) {
     const list = names || this.lobbyNames();
+    const host = this.net && this.net.isHost;
+    if (host) info = { cap: this.net.maxGuests + 1, mode: onlineModeLabel(this.net.big, this.net.conquest) };
+    if (info) this.lobbyInfo = info;
+    info = this.lobbyInfo || { cap: 2, mode: '' };
     const el = document.getElementById('net-lobby');
     el.innerHTML = '';
-    for (let i = 0; i < MAX_PLAYERS; i++) {
+    const title = document.createElement('div');
+    title.className = 'lobby-title';
+    title.textContent = info.mode;
+    el.appendChild(title);
+    for (let i = 0; i < info.cap; i++) {
       const row = document.createElement('div');
       row.className = 'lobby-slot' + (list[i] ? ' taken' : '');
       row.style.setProperty('--slot-color', PLAYER_COLORS[i][0]);
       row.textContent = list[i] || '---';
       el.appendChild(row);
     }
-    if (this.net && this.net.isHost && this.net.big) {
-      this.net.send({ t: 'lobby', names: list });
-    }
+    if (host) this.net.send({ t: 'lobby', names: list, cap: info.cap, mode: info.mode });
   }
 
   // Clipboard, with the old execCommand fallback for plain-http pages (LAN address)
@@ -3298,9 +3336,24 @@ class Game {
     this.joinOnline();
   }
 
+  // Room code from what was typed or pasted: a bare code or a whole ?join= link
+  parseJoinCode(text) {
+    const value = String(text || '').trim();
+    const link = value.match(/[?&]join=([A-Za-z0-9]+)/);
+    return (link ? link[1] : value).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  }
+
+  lastJoinCode() {
+    try {
+      return localStorage.getItem('tank2026_lastjoin') || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
   joinOnline() {
     if (this.menuName !== 'join') return;
-    const code = document.getElementById('net-join-code').value.trim().toUpperCase();
+    const code = this.parseJoinCode(document.getElementById('net-join-code').value);
     if (code.length < 4) {
       this.setNetStatus('ENTER THE CODE');
       return;
@@ -3314,9 +3367,15 @@ class Game {
     const net = new NetSession(this, false);
     this.net = net;
     this.guestBig = false;
+    this.lobbyInfo = null;
     this.setNetStatus('CONNECTING', true);
     net.join(code, () => {
       if (this.net !== net) return;
+      try {
+        localStorage.setItem('tank2026_lastjoin', code); // Prefilled next time in JOIN GAME
+      } catch (e) {
+        // Storage unavailable
+      }
       this.online = true;
       this.localIndex = 1; // Until the host's welcome says otherwise
       this.playerNames = [this.defaultName(0), this.playerName];
@@ -3341,8 +3400,7 @@ class Game {
   }
 
   restartOnline() {
-    if (this.net && this.net.big) this.startBigOnline();
-    else this.startNewGame(true, this.net && this.net.conquest ? 'conquest' : 'classic');
+    this.startOnline();
   }
 
   exitOnline() {
@@ -3359,7 +3417,7 @@ class Game {
   // Host: one guest left
   onGuestLeft(peer) {
     const name = peer.name || this.defaultName(peer.slot || 1);
-    if (!this.net.big) {
+    if (this.net.locked && !this.net.big) {
       this.leaveOnline(name + ' DISCONNECTED');
       return;
     }
@@ -3448,7 +3506,7 @@ class Game {
       } else if (msg.t === 'hello') {
         peer.name = cleanPlayerName(msg.name) || this.defaultName(peer.slot);
         if (this.playerNames) this.playerNames[peer.slot] = peer.name;
-        if (this.net.big && !this.net.locked) this.renderLobby();
+        if (!this.net.locked) this.renderLobby();
         this.updateHUD();
       } else if (msg.t === 'chat') {
         // Relay to everyone (the sender included); at most one message per 0.4 s
@@ -3468,13 +3526,16 @@ class Game {
     if (msg.t === 'welcome') {
       this.localIndex = Math.max(1, Math.min(MAX_PLAYERS - 1, msg.slot | 0));
       this.guestBig = !!msg.big;
-      document.getElementById('net-lobby').classList.toggle('hidden', !(this.menuName === 'waiting' && this.guestBig));
     } else if (msg.t === 'full') {
       this.closeNet();
       this.showMenu('join');
       this.setNetStatus(this.netErrorText({ type: 'full' }));
     } else if (msg.t === 'lobby') {
-      if (Array.isArray(msg.names)) this.renderLobby(msg.names.map(n => cleanPlayerName(n)).slice(0, MAX_PLAYERS));
+      if (Array.isArray(msg.names)) {
+        const cap = Math.max(2, Math.min(MAX_PLAYERS, msg.cap | 0));
+        const mode = String(msg.mode || '').toUpperCase().replace(/[^A-Z0-9 ·\-]/g, '').slice(0, 30);
+        this.renderLobby(msg.names.map(n => cleanPlayerName(n)).slice(0, cap), { cap, mode });
+      }
     } else if (msg.t === 'chat') {
       this.showChat(msg.slot | 0, cleanPlayerName(msg.name), cleanChatText(msg.text));
     } else if (msg.t === 'snap') {

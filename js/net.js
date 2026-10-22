@@ -48,8 +48,11 @@ class NetSession {
     return code;
   }
 
-  host(onCode, onGuest, onError) {
-    const code = NetSession.makeCode();
+  // code: the host's own room code (kept between games). If the server still holds it
+  // (a room closed a moment ago, or another tab hosts with it) a few retries follow,
+  // then a random code is used for this session
+  host(code, onCode, onGuest, onError, tries = 0) {
+    code = code || NetSession.makeCode();
     this.peer = new Peer(NET_PREFIX + code);
     this.peer.on('open', () => onCode(code));
     this.peer.on('connection', conn => {
@@ -67,12 +70,16 @@ class NetSession {
       if (this.closed) return;
       if (err.type === 'unavailable-id' && this.peers.length === 0) {
         this.peer.destroy();
-        this.host(onCode, onGuest, onError);
+        if (tries < 3) {
+          setTimeout(() => { if (!this.closed) this.host(code, onCode, onGuest, onError, tries + 1); }, 1500);
+        } else {
+          this.host(null, onCode, onGuest, onError, tries + 1);
+        }
       } else if (this.peers.length === 0 && err.type !== 'peer-unavailable') {
         onError(err);
       }
     });
-    this.startPing();
+    if (tries === 0) this.startPing(); // Retries reuse the first keep-alive timer
   }
 
   join(code, onConnect, onError) {
