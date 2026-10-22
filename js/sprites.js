@@ -44,7 +44,7 @@ const Sprites = {
     this.cache['eagle_enemy'] = this.tintCanvas(this.cache['eagle_alive'], 'rgba(220, 30, 30, 0.6)'); // Enemy city HQ
 
     // 3. High-Tech Holographic Power-Up Badges (60x60 high-res, drawn at 30x30)
-    const bonuses = ['star', 'helmet', 'clock', 'shovel', 'grenade', 'tank', 'gun', 'boat'];
+    const bonuses = ['star', 'helmet', 'clock', 'shovel', 'grenade', 'tank', 'gun', 'boat', 'flare'];
     bonuses.forEach(b => {
       this.cache['bonus_' + b] = this.renderHDPowerUp(b);
     });
@@ -846,6 +846,33 @@ const Sprites = {
         ctx.fillRect(-3, 0, 3, 2.5);
         break;
       }
+      case 'flare': {
+        // Signal flare: rocket with a bright burst on top (night bonus in conquest)
+        ctx.strokeStyle = '#b0bec5';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(-5, 8);
+        ctx.lineTo(1, -1);
+        ctx.stroke();
+        ctx.fillStyle = '#ff7043';
+        ctx.fillRect(-6.5, 7, 3, 3);
+        ctx.shadowColor = '#fff59d';
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = '#fffde7';
+        ctx.beginPath();
+        ctx.arc(3, -4, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffeb3b';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let k = 0; k < 8; k++) {
+          const ang = k * Math.PI / 4;
+          ctx.moveTo(3 + Math.cos(ang) * 5, -4 + Math.sin(ang) * 5);
+          ctx.lineTo(3 + Math.cos(ang) * 8, -4 + Math.sin(ang) * 8);
+        }
+        ctx.stroke();
+        break;
+      }
       case 'boat': {
         // Amphibious Assault Hydrofoil
         ctx.fillStyle = '#00e5ff';
@@ -904,17 +931,19 @@ const Sprites = {
     }
 
     // 0. Forward Halogen Headlights (cast soft light on the battlefield ground!)
-    const hlGrad = ctx.createRadialGradient(0, -14, 2, 0, -32, 28);
-    hlGrad.addColorStop(0, 'rgba(255, 240, 180, 0.5)');
-    hlGrad.addColorStop(0.5, 'rgba(255, 220, 120, 0.2)');
-    hlGrad.addColorStop(1, 'rgba(255, 200, 50, 0)');
-    ctx.fillStyle = hlGrad;
-    ctx.beginPath();
-    ctx.moveTo(0, -12);
-    ctx.lineTo(-14, -36);
-    ctx.lineTo(14, -36);
-    ctx.closePath();
-    ctx.fill();
+    if (!options.lightsOff) {
+      const hlGrad = ctx.createRadialGradient(0, -14, 2, 0, -32, 28);
+      hlGrad.addColorStop(0, 'rgba(255, 240, 180, 0.5)');
+      hlGrad.addColorStop(0.5, 'rgba(255, 220, 120, 0.2)');
+      hlGrad.addColorStop(1, 'rgba(255, 200, 50, 0)');
+      ctx.fillStyle = hlGrad;
+      ctx.beginPath();
+      ctx.moveTo(0, -12);
+      ctx.lineTo(-14, -36);
+      ctx.lineTo(14, -36);
+      ctx.closePath();
+      ctx.fill();
+    }
 
     // 1. Chassis Drop Shadow (elevation off ground)
     ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';

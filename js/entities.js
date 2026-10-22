@@ -404,6 +404,7 @@ class PlayerTank extends Tank {
     Sprites.drawTank(ctx, this.x - 1, this.y - 1, {
       type: 'player',
       playerIndex: this.index,
+      lightsOff: !!this.lightsOff,
       tier: this.tier,
       direction: this.direction,
       trackAnim: this.trackAnim,

@@ -17,6 +17,8 @@ class GameMap {
     this.grid = null;
     // Bunker tiles -> their Eagle (for the shovel flashing)
     this.fortOwner = new Map();
+    // Water tiles frozen for the night (keys r * cols + c)
+    this.frozen = new Set();
     // Brick mask: 4 bits per tile (bit 0: TL, bit 1: TR, bit 2: BL, bit 3: BR)
     // 15 (0b1111) means fully intact, 0 means destroyed
     this.brickMasks = [];
@@ -63,6 +65,7 @@ class GameMap {
   // -------------------------------------------------------------
   loadConquest(seed) {
     this.conquestSeed = seed;
+    this.frozen = new Set();
     this.nextChunk = 0;
     const chunks = [this.makeChunk(), this.makeChunk(), this.makeChunk()].reverse(); // [top, middle, start]
     this.grid = [];
@@ -111,6 +114,9 @@ class GameMap {
       this.brickMasks.push(new Uint8Array(this.cols).map((_, c) => this.grid[r][c] === MapGenerator.TILES.BRICK ? 0x0F : 0));
     }
     this.brickMasks = this.brickMasks.concat(oldMasks.slice(0, keep));
+    // Frozen water moves down with its rows
+    const shift = MapGenerator.ROWS * this.cols;
+    this.frozen = new Set(Array.from(this.frozen).map(k => k + shift).filter(k => k < this.rows * this.cols));
     this.chunkArchetypes = [chunk.archetype].concat(this.chunkArchetypes.slice(0, 2));
     this.newCities = [];
     this.newFinds = [];
@@ -580,12 +586,12 @@ const KEY_BINDINGS = {
   }]
 };
 const DIR_ACTIONS = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
-const KEY_ACTIONS = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'FIRE'];
+const KEY_ACTIONS = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'FIRE', 'LIGHTS'];
 
 // Main key of every action for players I and II (changeable in SETTINGS, saved locally)
 const DEFAULT_KEYMAP = {
-  p1: { UP: 'KeyW', DOWN: 'KeyS', LEFT: 'KeyA', RIGHT: 'KeyD', FIRE: 'Space' },
-  p2: { UP: 'ArrowUp', DOWN: 'ArrowDown', LEFT: 'ArrowLeft', RIGHT: 'ArrowRight', FIRE: 'Enter' }
+  p1: { UP: 'KeyW', DOWN: 'KeyS', LEFT: 'KeyA', RIGHT: 'KeyD', FIRE: 'Space', LIGHTS: 'KeyQ' },
+  p2: { UP: 'ArrowUp', DOWN: 'ArrowDown', LEFT: 'ArrowLeft', RIGHT: 'ArrowRight', FIRE: 'Enter', LIGHTS: 'Period' }
 };
 // Extra fire keys, used while no main binding takes them
 const EXTRA_FIRE = {
@@ -720,6 +726,7 @@ class Game {
     this.cities = [];
     this.turrets = [];
     this.shells = [];          // Artillery shells in flight
+    this.flares = [];          // Signal flares lighting the night
     this.mines = [];
     this.extraSpawns = 0;      // Reinforcements called by scouts
     this.upgrades = {};        // Conquest upgrades picked so far
@@ -784,6 +791,9 @@ class Game {
     this.records = loadJSON('tank2026_records', []);
     // Conquest special enemies that may appear (switched in SETTINGS)
     this.enemyTypes = Object.assign({ artillery: true, miner: true, scout: true }, loadJSON('tank2026_enemies', {}));
+    // Night in conquest: the cycle itself and each night rule (SETTINGS > НОЧЬ)
+    this.localNightOpts = Object.assign({ cycle: true, lights: true, searchlights: true, enemies: true, ice: true, bonus: true },
+      loadJSON('tank2026_night', {}));
     this.freshRecords = [];
 
     this.waterTimer = 0;
@@ -983,6 +993,12 @@ class Game {
         else this.handleMenuKey(e.code);
         return;
       }
+
+      // Headlights on / off (night stealth)
+      [0, 1].forEach(idx => {
+        const b = this.getBindings(idx);
+        if (b && b.LIGHTS && b.LIGHTS.includes(e.code) && this.state === 'PLAYING') this.toggleLights(idx);
+      });
 
       if (this.state === 'UPGRADE' && this.upgradeChoices) {
         const n = this.upgradeChoices.length;
@@ -1193,6 +1209,7 @@ class Game {
         ['BACK', () => this.showMenu('main', 3)]
       ],
       settings: this.settingsMenuItems(),
+      night: this.nightMenuItems(),
       records: [
         ['BACK', () => this.showMenu('main', 6)]
       ],
@@ -1235,7 +1252,7 @@ class Game {
     this.menuItems = menus[name];
     const container = document.getElementById('game-menu');
     container.innerHTML = '';
-    container.classList.toggle('compact', name === 'settings');
+    container.classList.toggle('compact', name === 'settings' || name === 'night');
     document.getElementById('conquest-stats').classList.toggle('hidden',
       !(name === 'conquestOver' || (name === 'onlineOver' && this.layout.conquest)));
     document.getElementById('records-table').classList.toggle('hidden', name !== 'records');
@@ -1297,6 +1314,7 @@ class Game {
         }]);
       });
     });
+    items.push(['НОЧЬ...', () => this.showMenu('night'), true]);
     items.push(['RESET KEYS', () => {
       this.keymap = { p1: Object.assign({}, DEFAULT_KEYMAP.p1), p2: Object.assign({}, DEFAULT_KEYMAP.p2) };
       applyKeyMap(this.keymap);
@@ -1304,6 +1322,22 @@ class Game {
       this.showMenu('settings', this.menuIndex);
     }, true]);
     items.push(['BACK', () => this.showMenu('main', 5), true]);
+    return items;
+  }
+
+  // SETTINGS > НОЧЬ: day/night cycle and every night rule on or off
+  nightMenuItems() {
+    const opts = this.localNightOpts;
+    const rows = [
+      ['cycle', 'ДЕНЬ И НОЧЬ'], ['lights', 'ФАРЫ И СКРЫТНОСТЬ'], ['searchlights', 'ПРОЖЕКТОРЫ'],
+      ['enemies', 'НОЧНЫЕ ВРАГИ'], ['ice', 'ЛЁД НА ВОДЕ'], ['bonus', 'НОЧНОЙ БОНУС']
+    ];
+    const items = rows.map(([key, label], i) => [label + ': ' + (opts[key] ? 'ВКЛ' : 'ВЫКЛ'), () => {
+      opts[key] = !opts[key];
+      saveJSON('tank2026_night', opts);
+      this.showMenu('night', i);
+    }, true]);
+    items.push(['BACK', () => this.showMenu('settings', 4), true]);
     return items;
   }
 
@@ -1779,6 +1813,12 @@ class Game {
         if (!base.alive && Math.random() < dt * 8) this.addSmokeParticle(base.x + 16, base.y + 12, true);
       });
 
+      // Signal flares burn down
+      for (let i = this.flares.length - 1; i >= 0; i--) {
+        this.flares[i].t += dt;
+        if (this.flares[i].t >= this.flares[i].dur) this.flares.splice(i, 1);
+      }
+
       // Light flashes, weather, rustling trees and damage effects
       for (let i = this.lights.length - 1; i >= 0; i--) {
         this.lights[i].t += dt;
@@ -1841,6 +1881,7 @@ class Game {
 
       this.handlePlayerInput(p, idx, dt);
       p.update(dt, this.map);
+      if (p.revealTimer > 0) p.revealTimer -= dt;
       if (p.frozenTimer <= 0) {
         anyActive = true;
         if (p.moving) anyMoving = true;
@@ -1868,6 +1909,7 @@ class Game {
       this.updateTurrets(dt);
       this.updateCapturedCities(dt);
       this.updateSpecialEnemies(dt);
+      this.updateNightRules(dt);
     } else {
       this.handleEnemySpawning(dt);
     }
@@ -1906,7 +1948,7 @@ class Game {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       if (this.layout.conquest && enemy.y + 26 < this.camY) enemy.shootTimer = Math.max(enemy.shootTimer, 0.4); // No shots from off-screen
-      const bullet = enemy.update(dt, this.map, this.nearestAlivePlayer(enemy), this.nearestBase(enemy), this.isFrozen);
+      const bullet = enemy.update(dt, this.map, this.nearestTarget(enemy), this.nearestBase(enemy), this.isFrozen);
       if (enemy.moving && Math.random() < 0.035) {
         this.recordTreadMark(enemy);
       }
@@ -2121,8 +2163,10 @@ class Game {
       const confirm = btn(0);
       const back = btn(1);
       const start = btn(9);
+      const lights = btn(4);
       return {
-        dir, fire, confirm, back, start,
+        dir, fire, confirm, back, start, lights,
+        lightsPressed: lights && !prev.lights,
         firePressed: fire && !prev.fire,
         confirmPressed: confirm && !prev.confirm,
         backPressed: back && !prev.back,
@@ -2130,7 +2174,7 @@ class Game {
         dirPressed: dir && dir !== prev.dir ? dir : null
       };
     });
-    this.padPrev = this.pads.map(p => ({ dir: p.dir, fire: p.fire, confirm: p.confirm, back: p.back, start: p.start }));
+    this.padPrev = this.pads.map(p => ({ dir: p.dir, fire: p.fire, confirm: p.confirm, back: p.back, start: p.start, lights: p.lights }));
     this.handlePadUI();
   }
 
@@ -2141,6 +2185,13 @@ class Game {
     if (this.online) return idx === 0 ? this.pads[0] || null : null;
     if (this.localBig) return (idx >= 2 ? this.pads[idx - 2] : this.pads[idx + 2]) || null;
     return this.pads[idx] || null;
+  }
+
+  // Inverse of padForPlayer
+  playerForPad(i) {
+    if (this.online) return 0;
+    if (this.localBig) return i < 2 ? i + 2 : i - 2;
+    return i;
   }
 
   // Menus, pause and tally can be driven from any gamepad
@@ -2168,6 +2219,7 @@ class Game {
         if (this.isGuest()) this.net.send({ t: 'cmd', c: 'pause' });
         else this.togglePause();
       }
+      if (pad.lightsPressed && this.state === 'PLAYING') this.toggleLights(this.playerForPad(i));
       if (this.state === 'TALLY' && pad.firePressed) {
         this.advanceTally();
         pad.firePressed = false;
@@ -2240,6 +2292,7 @@ class Game {
   tryShoot(player) {
     if (!player || player.dead || player.frozenTimer > 0 || this.state !== 'PLAYING' || this.isGuest()) return false;
     const b = player.shoot();
+    if (b) player.revealTimer = 1.5; // Muzzle flash gives the tank away at night
     this.addBullet(b);
     return !!b;
   }
@@ -2375,6 +2428,19 @@ class Game {
         continue;
       }
 
+      // 2b'. Player shell breaks a city searchlight
+      const lampCity = b.owner === 'player' && this.cities.find(c => c.alive && !c.lampDead &&
+        Math.abs(b.x + 3 - (c.x + 28)) < 5 && Math.abs(b.y + 3 - (c.y + 1)) < 5);
+      if (lampCity) {
+        lampCity.lampDead = true;
+        this.spawnRicochetSparks(b.x + 3, b.y + 3);
+        sound.playRicochet('bullet');
+        this.addScore(100, b.x, b.y, b.shooter);
+        b.dead = true;
+        this.removeBullet(i);
+        continue;
+      }
+
       // 2b. Bullet vs enemy headquarters (conquest)
       const hitHQ = this.cities.find(city => city.alive && b.collidesWith(city));
       if (hitHQ) {
@@ -2480,10 +2546,11 @@ class Game {
     this.addScreenShake(3.5);
     sound.playExplosion(true);
     if (killer) killer.kills[enemy.type] = (killer.kills[enemy.type] || 0) + 1;
-    this.addScore(enemy.points, cx, cy, killer);
+    const nightBonus = this.nightBonusActive();
+    this.addScore(nightBonus ? Math.round(enemy.points * 1.5) : enemy.points, cx, cy, killer);
 
-    // Spawn power-up if bonus tank
-    if (enemy.isFlashing) {
+    // Spawn power-up if bonus tank (at night sometimes from any tank)
+    if (enemy.isFlashing || (nightBonus && Math.random() < 0.12)) {
       this.spawnRandomPowerUp(enemy.x, enemy.y);
     }
 
@@ -2546,7 +2613,8 @@ class Game {
   spawnRandomPowerUp(x, y) {
     sound.playPowerUpSpawn();
     const bonuses = ['star', 'helmet', 'clock', 'shovel', 'grenade', 'tank', 'gun', 'boat']
-      .filter(b => !(this.layout.conquest && b === 'shovel')); // No Eagle of yours to fortify
+      .filter(b => !(this.layout.conquest && b === 'shovel')) // No Eagle of yours to fortify
+      .concat(this.flareAllowed() ? ['flare'] : []);
     const chosen = bonuses[Math.floor(Math.random() * bonuses.length)];
 
     const spot = this.findPowerUpSpot() || {
@@ -2632,6 +2700,11 @@ class Game {
       }
       case 'tank':
         player.lives++;
+        break;
+      case 'flare':
+        // Signal flare: a bright light over this spot for ten seconds
+        this.flares.push({ x: cx, y: cy, t: 0, dur: 10 });
+        this.spawnRing(cx, cy, '#fff59d', 50, 0.7);
         break;
       case 'boat':
         player.hasBoat = true;
@@ -3270,14 +3343,17 @@ class Game {
       cs: this.cstats,
       up: this.upgrades,
       uc: this.state === 'UPGRADE' ? this.upgradeChoices : null,
-      ct: this.cities.map(c => [c.id, c.x, c.y, c.hp, c.maxHp, c.alive ? 1 : 0, c.captured ? 1 : 0, c.owner, c.zone.x, c.zone.y, c.zone.w, c.zone.h, c.name, r(c.alarm)]),
+      ct: this.cities.map(c => [c.id, c.x, c.y, c.hp, c.maxHp, c.alive ? 1 : 0, c.captured ? 1 : 0, c.owner, c.zone.x, c.zone.y, c.zone.w, c.zone.h, c.name, r(c.alarm), c.lampDead ? 1 : 0]),
+      no: this.localNightOpts,
+      fl: this.flares.map(f => [r(f.x), r(f.y), r(f.t), f.dur]),
       b: this.bases.map(b => [b.x, b.y, b.alive, r(b.shovelTimer), b.shovelFlashing, b.hp]),
       p: this.players.map(p => ({
         x: r(p.x), y: r(p.y), direction: p.direction, tier: p.tier, trackAnim: p.trackAnim, trackPos: r(p.trackPos),
         shieldTimer: r(p.shieldTimer), shieldPhase: r(p.shieldPhase), hasBoat: p.hasBoat, dead: p.dead,
         frozenTimer: r(p.frozenTimer), recoil: r(p.recoil), muzzleFlash: r(p.muzzleFlash),
         lastBarrelSide: p.lastBarrelSide, lives: p.lives, score: p.score, kills: p.kills,
-        moving: p.moving, index: p.index, spawnX: p.spawnX, spawnY: p.spawnY, w: p.w, h: p.h, armor: p.armor || 0
+        moving: p.moving, index: p.index, spawnX: p.spawnX, spawnY: p.spawnY, w: p.w, h: p.h, armor: p.armor || 0,
+        lightsOff: !!p.lightsOff
       })),
       e: this.enemies.map(e => ({
         x: r(e.x), y: r(e.y), direction: e.direction, type: e.type, trackAnim: e.trackAnim, trackPos: r(e.trackPos),
@@ -3318,6 +3394,8 @@ class Game {
     if (typeof s.cy === 'number') this.camY = s.cy;
     if (typeof s.dn === 'number') this.dayTime = s.dn;
     if (Array.isArray(s.ca)) this.map.chunkArchetypes = s.ca;
+    if (s.no && typeof s.no === 'object') this.hostNightOpts = s.no;
+    if (Array.isArray(s.fl)) this.flares = s.fl.map(([x, y, t, dur]) => ({ x, y, t, dur }));
     if (Array.isArray(s.sl)) this.shells = s.sl.map(([fx, fy, tx, ty, t, dur]) => ({ fx, fy, tx, ty, t, dur }));
     if (Array.isArray(s.mn)) this.mines = s.mn.map(([x, y, arm]) => ({ x, y, arm }));
     if (Array.isArray(s.tu)) {
@@ -3328,9 +3406,9 @@ class Game {
     if (s.up && typeof s.up === 'object') this.upgrades = s.up;
     if (Array.isArray(s.uc)) this.upgradeChoices = s.uc.filter(id => UPGRADES.some(x => x.id === id));
     if (Array.isArray(s.ct)) {
-      this.cities = s.ct.map(([id, x, y, hp, maxHp, alive, captured, owner, zx, zy, zw, zh, name, alarm]) => ({
+      this.cities = s.ct.map(([id, x, y, hp, maxHp, alive, captured, owner, zx, zy, zw, zh, name, alarm, lampDead]) => ({
         id, x, y, w: 32, h: 32, hp, maxHp, alive: !!alive, captured: !!captured, owner,
-        zone: { x: zx, y: zy, w: zw, h: zh }, spawns: [], name: String(name || '').toUpperCase().replace(/[^A-ZА-ЯЁ0-9 \-]/g, '').slice(0, 12) || 'ГОРОД', alarm: alarm || 0
+        zone: { x: zx, y: zy, w: zw, h: zh }, spawns: [], name: String(name || '').toUpperCase().replace(/[^A-ZА-ЯЁ0-9 \-]/g, '').slice(0, 12) || 'ГОРОД', alarm: alarm || 0, lampDead: !!lampDead
       }));
     }
     if (Array.isArray(s.b)) {
@@ -3703,6 +3781,8 @@ class Game {
       const p = Math.min(1, e.timer / e.duration);
       glow(e.x, e.y, e.large ? 70 : 34, (e.large ? 0.5 : 0.3) * (1 - p), '255, 150, 60');
     });
+    // Burning signal flares
+    this.flares.forEach(f => glow(f.x, f.y, 60, 0.35 * (1 - f.t / f.dur), '255, 245, 200'));
     // Shells carry a faint glow
     this.bullets.forEach(b => glow(b.x + 3, b.y + 3, 12, 0.22, b.owner === 'player' ? '255, 220, 120' : '255, 120, 80'));
     ctx.restore();
@@ -4285,6 +4365,8 @@ class Game {
     this.turrets = [];
     this.shells = [];
     this.mines = [];
+    this.flares = [];
+    this.waterFrozen = false;
     this.extraSpawns = 0;
     this.bossSpawned = {};
     this.cstats = { time: 0, fortresses: 0, bosses: 0 };
@@ -4335,7 +4417,7 @@ class Game {
       });
     });
     this.map.newTurrets = [];
-    const bonuses = ['star', 'helmet', 'clock', 'grenade', 'tank', 'gun', 'boat'];
+    const bonuses = ['star', 'helmet', 'clock', 'grenade', 'tank', 'gun', 'boat'].concat(this.flareAllowed() ? ['flare'] : []);
     this.map.newFinds.forEach(f => {
       const pu = new PowerUpItem(f.x * 16, f.y * 16, bonuses[Math.floor(Math.random() * bonuses.length)]);
       pu.life = Infinity; // Found on the ground: does not expire
@@ -4387,9 +4469,11 @@ class Game {
     });
     this.powerups = this.powerups.filter(p => p.y < limit);
     this.cities = this.cities.filter(c => c.zone.y < limit);
+    if (this.waterFrozen) this.freezeWater(0, MapGenerator.ROWS); // New land arrives frozen at night
     this.turrets.forEach(t => { t.y += dy; });
     this.turrets = this.turrets.filter(t => t.y < limit);
     this.shells.forEach(s => { s.fy += dy; s.ty += dy; });
+    this.flares.forEach(f => { f.y += dy; });
     this.mines.forEach(m => { m.y += dy; });
     this.mines = this.mines.filter(m => m.y < limit);
     this.adoptChunkContent();
@@ -4459,8 +4543,13 @@ class Game {
       const roll = Math.random();
       const d = this.distanceRows;
       const on = this.enemyTypes;
-      if (on.scout && d > 20 && roll < 0.12) config = { type: 'scout', hp: 1, points: 150, isFlashing: false };
-      else if (on.artillery && d > 30 && roll >= 0.12 && roll < 0.22) config = { type: 'artillery', hp: 2, points: 300, isFlashing: false };
+      const night = this.nightRule('enemies');
+      if (night && Math.random() < 0.3) {
+        // Night raiders: fast tanks and scouts
+        config = on.scout && Math.random() < 0.4 ? { type: 'scout', hp: 1, points: 150, isFlashing: false }
+          : { type: 'fast', hp: 1, points: 200, isFlashing: false };
+      } else if (on.scout && d > 20 && roll < 0.12) config = { type: 'scout', hp: 1, points: 150, isFlashing: false };
+      else if (on.artillery && d > 30 && roll >= 0.12 && roll < (night ? 0.17 : 0.22)) config = { type: 'artillery', hp: 2, points: 300, isFlashing: false };
       else if (on.miner && d > 50 && roll >= 0.22 && roll < 0.32) config = { type: 'miner', hp: 1, points: 250, isFlashing: false };
     }
     this.conquestSpawnCount++;
@@ -4511,9 +4600,14 @@ class Game {
     });
   }
 
+  // Night options in force: the host's while playing online as a guest
+  get nightOpts() {
+    return (this.isGuest() && this.hostNightOpts) || this.localNightOpts;
+  }
+
   // 0 at noon .. ~0.62 at midnight (conquest only)
   darkness() {
-    if (!this.layout.conquest) return 0;
+    if (!this.layout.conquest || !this.nightOpts.cycle) return 0;
     return Math.max(0, -Math.cos(((this.dayTime || 0) / DAY_LENGTH) * Math.PI * 2)) * 0.62;
   }
 
@@ -4552,6 +4646,10 @@ class Game {
       const d = DIRS[t.direction] || DIRS.UP;
       const cx = t.x + 13;
       const cy = t.y + 13;
+      if (t.lightsOff) {
+        light(t.x + 13, t.y + 13, 12, 0.25); // Lights off: barely visible
+        return;
+      }
       const reach = t.type === 'player' ? 90 * (1 + 0.35 * ((this.upgrades && this.upgrades.lights) || 0)) : 60;
       const a = Math.atan2(d.dy, d.dx);
       n.save();
@@ -4570,8 +4668,197 @@ class Game {
     this.cities.forEach(c => { if (c.alive) light(c.x + 16, c.y + 16, 34, 0.55); });
     this.turrets.forEach(t => { if (t.alive) light(t.x + 12, t.y + 12, 14, 0.5); });
     this.parts.forEach(p => { if (p.settled && p.heat > 0) light(p.x, p.y, 10, 0.6 * Math.min(1, p.heat)); });
+    this.nightLightsExtra(light, n);
 
     this.ctx.drawImage(nc, 0, this.camY, W, H);
+  }
+
+  // -------------------------------------------------------------
+  // NIGHT RULES (conquest; each one can be switched off in SETTINGS > НОЧЬ)
+  // -------------------------------------------------------------
+  // A night rule is active: conquest, cycle on, that rule on, and it is dark enough
+  nightRule(key) {
+    return !!(this.layout.conquest && this.nightOpts.cycle && this.nightOpts[key] && this.darkness() > 0.3);
+  }
+
+  // How far enemies notice a player: with headlights on far, with them off only close up
+  // (a shot gives the tank away for a moment)
+  detectRange(p) {
+    if (!this.nightRule('lights')) return Infinity;
+    if (p.revealTimer > 0) return 190;
+    return p.lightsOff ? 70 : 190;
+  }
+
+  // Nearest player this enemy can notice (null: it wanders)
+  nearestTarget(tank) {
+    let best = null;
+    let bestDist = Infinity;
+    for (const p of this.players) {
+      if (p.dead) continue;
+      const d = Math.hypot(p.x - tank.x, p.y - tank.y);
+      if (d < bestDist && d <= this.detectRange(p)) {
+        bestDist = d;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  toggleLights(idx) {
+    if (this.isGuest()) {
+      this.net.send({ t: 'cmd', c: 'lights' });
+      return;
+    }
+    const p = this.players[idx];
+    if (!p || p.dead) return;
+    p.lightsOff = !p.lightsOff;
+    sound.playRicochet('shield');
+    this.floatingScores.push(new FloatingScore(p.x + 13, p.y - 6, 0, {
+      text: p.lightsOff ? 'ФАРЫ ВЫКЛ' : 'ФАРЫ ВКЛ', color: '#fff59d', duration: 1, rise: 12
+    }));
+  }
+
+  // Sweeping searchlight of a city; the angle follows the synced day time so guests see the same
+  searchlightAngle(city) {
+    return Math.PI / 2 + Math.sin((this.dayTime || 0) * 0.7 + city.id * 1.7) * 1.1;
+  }
+
+  updateNightRules(dt) {
+    // Searchlights: a player caught in a beam brings the garrison out
+    if (this.nightRule('searchlights')) {
+      this.cities.forEach(city => {
+        if (!city.alive || city.lampDead) return;
+        if (city.spotCooldown > 0) { city.spotCooldown -= dt; return; }
+        const cx = city.x + 16;
+        const cy = city.y + 16;
+        const a = this.searchlightAngle(city);
+        const caught = this.players.find(p => {
+          if (p.dead) return false;
+          const dx = p.x + 13 - cx;
+          const dy = p.y + 13 - cy;
+          const d = Math.hypot(dx, dy);
+          if (d > 150 || d < 10) return false;
+          let diff = Math.atan2(dy, dx) - a;
+          diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+          return Math.abs(diff) < 0.24;
+        });
+        if (caught) {
+          city.alarm = 8;
+          city.spotCooldown = 6;
+          sound.playBonusAlert();
+          this.floatingScores.push(new FloatingScore(caught.x + 13, caught.y - 6, 0, {
+            text: 'ОБНАРУЖЕН!', color: '#ff5252', duration: 1.4, rise: 12
+          }));
+        }
+      });
+    }
+
+    // Water freezes around midnight and thaws in the morning (never under a tank)
+    this.freezeTimer2 = (this.freezeTimer2 || 0) - dt;
+    if (this.freezeTimer2 > 0) return;
+    this.freezeTimer2 = 0.5;
+    const freezeOn = this.layout.conquest && this.nightOpts.cycle && this.nightOpts.ice;
+    const dark = this.darkness();
+    if (freezeOn && dark > 0.45 && !this.waterFrozen) {
+      this.waterFrozen = true;
+      this.freezeWater(0, this.map.rows);
+      sound.playPowerUpCollect('clock');
+    } else if (this.waterFrozen && (dark < 0.25 || !freezeOn)) {
+      this.thawWater();
+    }
+  }
+
+  freezeWater(r0, r1) {
+    const T = MapGenerator.TILES;
+    for (let r = r0; r < r1; r++) {
+      for (let c = 0; c < this.map.cols; c++) {
+        if (this.map.grid[r][c] !== T.WATER) continue;
+        this.map.grid[r][c] = T.ICE;
+        this.map.frozen.add(r * this.map.cols + c);
+      }
+    }
+  }
+
+  thawWater() {
+    const T = MapGenerator.TILES;
+    const tanks = this.players.concat(this.enemies).filter(t => !t.dead);
+    for (const key of Array.from(this.map.frozen)) {
+      const r = Math.floor(key / this.map.cols);
+      const c = key % this.map.cols;
+      const under = tanks.some(t => t.x < c * 16 + 16 && t.x + t.w > c * 16 && t.y < r * 16 + 16 && t.y + t.h > r * 16);
+      if (under) continue;
+      if (this.map.grid[r] && this.map.grid[r][c] === T.ICE) this.map.grid[r][c] = T.WATER;
+      this.map.frozen.delete(key);
+    }
+    if (this.map.frozen.size === 0) this.waterFrozen = false;
+  }
+
+  flareAllowed() {
+    return !!(this.layout.conquest && this.nightOpts.cycle && this.nightOpts.bonus);
+  }
+
+  // Night bonus: more points for kills and a chance of a bonus from any tank
+  nightBonusActive() {
+    return this.nightRule('bonus');
+  }
+
+  // Night layer extras: searchlight beams and flare light cut holes in the darkness
+  nightLightsExtra(light, n) {
+    if (this.nightRule('searchlights')) {
+      this.cities.forEach(city => {
+        if (!city.alive || city.lampDead) return;
+        const cx = city.x + 16;
+        const cy = city.y + 16;
+        const a = this.searchlightAngle(city);
+        n.save();
+        n.beginPath();
+        n.moveTo(cx, cy);
+        n.arc(cx, cy, 150, a - 0.24, a + 0.24);
+        n.closePath();
+        n.clip();
+        light(cx, cy, 150, 0.8);
+        n.restore();
+      });
+    }
+    this.flares.forEach(f => {
+      const p = f.t / f.dur;
+      light(f.x, f.y, 170 * (p < 0.1 ? p / 0.1 : 1), 0.95 * (1 - Math.max(0, p - 0.8) / 0.2));
+    });
+  }
+
+  // Searchlight lamps on the HQs, and their visible beams at night
+  renderSearchlights() {
+    const ctx = this.ctx;
+    const night = this.nightRule('searchlights');
+    this.cities.forEach(city => {
+      if (!city.alive) return;
+      const lx = city.x + 28;
+      const ly = city.y + 1;
+      if (night && !city.lampDead) {
+        const cx = city.x + 16;
+        const cy = city.y + 16;
+        const a = this.searchlightAngle(city);
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, 150);
+        g.addColorStop(0, 'rgba(255, 250, 210, 0.22)');
+        g.addColorStop(1, 'rgba(255, 250, 210, 0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, 150, a - 0.24, a + 0.24);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+      // The lamp itself (a target: shooting it switches the searchlight off)
+      ctx.fillStyle = '#2a2f37';
+      ctx.fillRect(lx - 3, ly - 3, 6, 6);
+      ctx.fillStyle = city.lampDead ? '#3a2020' : night ? '#fffde7' : '#8a8f99';
+      ctx.beginPath();
+      ctx.arc(lx, ly, 2, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
 
   // Captured cities now and then leave a bonus by their ruined HQ (while on screen)
@@ -4594,7 +4881,7 @@ class Game {
         if (r < 0 || c < 0 || r + 1 >= this.map.rows || c + 1 >= this.map.cols) continue;
         const tiles = [this.map.grid[r][c], this.map.grid[r][c + 1], this.map.grid[r + 1][c], this.map.grid[r + 1][c + 1]];
         if (tiles.some(t => t === T.STEEL || t === T.WATER)) continue;
-        const bonuses = ['star', 'helmet', 'clock', 'grenade', 'tank', 'gun', 'boat'];
+        const bonuses = ['star', 'helmet', 'clock', 'grenade', 'tank', 'gun', 'boat'].concat(this.flareAllowed() ? ['flare'] : []);
         this.powerups.push(new PowerUpItem(c * 16, r * 16, bonuses[Math.floor(Math.random() * bonuses.length)]));
         this.spawnRing(c * 16 + 14, r * 16 + 14, PLAYER_COLORS[city.owner || 0][0], 26, 0.5);
         sound.playPowerUpSpawn();
@@ -4619,6 +4906,7 @@ class Game {
         if (p.dead) return;
         const dx = p.x + 13 - cx;
         const dy = p.y + 13 - cy;
+        if (Math.hypot(dx, dy) > this.detectRange(p)) return; // Unseen in the dark
         if (Math.abs(dx) < 12 && Math.abs(dy) < best) { best = Math.abs(dy); aim = dy < 0 ? 'UP' : 'DOWN'; }
         else if (Math.abs(dy) < 12 && Math.abs(dx) < best) { best = Math.abs(dx); aim = dx < 0 ? 'LEFT' : 'RIGHT'; }
       });
@@ -5046,7 +5334,7 @@ class Game {
   updateSpecialEnemies(dt) {
     this.enemies.forEach(e => {
       if (e.dead || this.isFrozen || e.stunTimer > 0) return;
-      const target = this.nearestAlivePlayer(e);
+      const target = this.nearestTarget(e);
       if (!target) return;
       const dist = Math.hypot(target.x - e.x, target.y - e.y);
       const onScreen = e.y + 26 > this.camY;
@@ -5061,8 +5349,9 @@ class Game {
           const d = DIRS[target.direction] || DIRS.UP;
           this.shells.push({
             fx: e.x + 13, fy: e.y + 13,
-            tx: target.x + 13 + d.dx * lead + (Math.random() - 0.5) * 16,
-            ty: target.y + 13 + d.dy * lead + (Math.random() - 0.5) * 16,
+            // At night (night enemies rule) the gunners can barely see: much wider spread
+            tx: target.x + 13 + d.dx * lead + (Math.random() - 0.5) * 16 * (this.nightRule('enemies') ? 3 : 1),
+            ty: target.y + 13 + d.dy * lead + (Math.random() - 0.5) * 16 * (this.nightRule('enemies') ? 3 : 1),
             t: 0, dur: 1.3
           });
           e.recoil = 2.5;
@@ -5710,6 +5999,7 @@ class Game {
     this.map.render(ctx, false, this.waterFrame);
     this.renderTerritory();
     this.renderCities();
+    this.renderSearchlights();
     this.renderTurrets();
     if (this.mines.length || this.shells.length) this.renderShellsAndMines();
 
