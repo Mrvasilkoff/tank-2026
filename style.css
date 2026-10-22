@@ -1465,3 +1465,66 @@ body.fullscreen #game-wrapper {
   grid-template-columns: repeat(6, 12px);
 }
 
+
+/* Online chat: messages over the field, input along the bottom */
+.chat-log {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 44px;
+  z-index: 23;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.chat-line {
+  max-width: 100%;
+  padding: 2px 6px;
+  font-family: 'VT323', monospace;
+  font-size: 20px;
+  line-height: 1.1;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  overflow-wrap: anywhere;
+  animation: chatLife var(--chat-life, 7000ms) linear both;
+}
+
+.chat-log.open .chat-line {
+  animation: none;
+}
+
+.chat-name {
+  margin-right: 2px;
+}
+
+@keyframes chatLife {
+  0% { opacity: 0; transform: translateY(4px); }
+  4% { opacity: 1; transform: none; }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.chat-input {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 23;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  font-family: 'VT323', monospace;
+  font-size: 22px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.8);
+  border: 2px solid var(--nes-yellow);
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.chat-input.hidden {
+  display: none;
+}

@@ -63,6 +63,10 @@
           </div>
         </div>
 
+        <!-- Online chat (T to type, 1-4 quick phrases) -->
+        <div id="chat-log" class="chat-log"></div>
+        <input id="chat-input" class="chat-input hidden" maxlength="60" placeholder="MESSAGE · ENTER" autocomplete="off" spellcheck="false">
+
         <!-- Conquest: pick an upgrade after a captured city -->
         <div id="upgrade-panel" class="upgrade-panel hidden">
           <div class="upgrade-title">UPGRADE</div>
@@ -257,6 +261,7 @@
           <li><strong>2 players — I:</strong> WASD — move, SPACE / F — fire</li>
           <li><strong>2 players — II:</strong> arrows — move, ENTER / NUM0 / RIGHT CTRL — fire</li>
           <li><strong>ONLINE:</strong> one player picks HOST and sends COPY LINK (or the code), the other opens the link or picks JOIN and types the code</li>
+          <li><strong>CHAT (online):</strong> T — type a message, ENTER — send, ESC — cancel. Quick phrases: 1 HELP · 2 COVER THE BASE · 3 FOLLOW ME · 4 GG (gamepad: hold SELECT and press ← ↓ ↑ →)</li>
           <li><strong>CONQUEST:</strong> an endless march north with no base of your own. Enemies come towards you and cities stand in the way — destroy the red HQ and the land becomes yours. The flag on the panel counts captured cities</li>
           <li><strong>Night in CONQUEST:</strong> Q (player II: «.», gamepad: LB) switches your headlights off: enemies only notice you up close, but a shot gives you away. City searchlights raise the alarm (the lamp on the HQ can be shot out). At night there are more fast enemies, artillery misses, water freezes, kills score ×1.5 and the flare bonus lights everything around. Every rule can be switched in SETTINGS → NIGHT</li>
           <li><strong>HOST 4:</strong> big map with two bases for 2–4 players; the host presses START when everyone has joined. Losing either base is GAME OVER</li>

@@ -687,6 +687,21 @@ function cleanPlayerName(name) {
   return String(name || '').toUpperCase().replace(/[^A-ZА-ЯЁ0-9 \-]/g, '').trim().slice(0, 8);
 }
 
+// Online chat: T opens the input; quick phrases on keys 1-4 or gamepad SELECT + d-pad
+const CHAT_MAX = 60;          // Characters per message
+const CHAT_LINE_TIME = 7000;  // ms a message stays on screen
+const CHAT_LINES = 5;         // Messages shown at once
+const QUICK_PHRASES = [
+  { key: 'Digit1', pad: 'LEFT', text: 'HELP!' },
+  { key: 'Digit2', pad: 'DOWN', text: 'COVER THE BASE!' },
+  { key: 'Digit3', pad: 'UP', text: 'FOLLOW ME!' },
+  { key: 'Digit4', pad: 'RIGHT', text: 'GG!' }
+];
+
+function cleanChatText(text) {
+  return String(text || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, CHAT_MAX);
+}
+
 // -------------------------------------------------------------
 // MAIN GAME CONTROLLER
 // -------------------------------------------------------------
@@ -965,6 +980,11 @@ class Game {
         this.showMenu('settings', this.menuIndex);
         return;
       }
+      if (e.target && e.target.id === 'chat-input') {
+        if (e.code === 'Enter' || e.code === 'NumpadEnter') this.closeChat(true);
+        else if (e.code === 'Escape') this.closeChat(false);
+        return;
+      }
       if (e.target && e.target.id === 'net-name') {
         if (['Enter', 'NumpadEnter', 'Escape'].includes(e.code)) e.target.blur();
         return;
@@ -974,6 +994,19 @@ class Game {
         if (e.code === 'Enter' || e.code === 'NumpadEnter') this.joinOnline();
         if (e.code === 'Escape') this.showMenu('online', 2);
         return;
+      }
+      // Online chat: T opens the input, 1-4 send a quick phrase (unless SETTINGS gave the key an action)
+      if (this.chatAvailable() && !e.repeat && this.state !== 'UPGRADE' && !this.isBoundCode(e.code)) {
+        if (e.code === 'KeyT') {
+          e.preventDefault(); // Or the "t" lands in the input
+          this.openChat();
+          return;
+        }
+        const phrase = QUICK_PHRASES.find(q => q.key === e.code);
+        if (phrase) {
+          this.sendChat(phrase.text);
+          return;
+        }
       }
       if (blockedDefaults.has(e.code)) e.preventDefault();
       this.keys[e.code] = true;
@@ -1142,6 +1175,9 @@ class Game {
         // Storage unavailable: keep the name for this session only
       }
     });
+
+    // Chat input: clicking away closes it without sending
+    document.getElementById('chat-input').addEventListener('blur', () => this.closeChat(false));
 
     // Room code: click to copy
     const codeEl = document.getElementById('net-code');
@@ -2073,7 +2109,7 @@ class Game {
     let tap = false;
     const pad = this.padForPlayer(idx);
     if (pad) {
-      if (!dir) dir = pad.dir;
+      if (!dir && !(pad.chat && this.chatAvailable())) dir = pad.dir;
       fire = fire || pad.fire;
       tap = pad.firePressed;
       pad.firePressed = false; // A press fires once even if several physics steps run this frame
@@ -2171,8 +2207,9 @@ class Game {
       const back = btn(1);
       const start = btn(9);
       const lights = btn(4);
+      const chat = btn(8); // SELECT / VIEW: held for quick chat phrases
       return {
-        dir, fire, confirm, back, start, lights,
+        dir, fire, confirm, back, start, lights, chat,
         lightsPressed: lights && !prev.lights,
         firePressed: fire && !prev.fire,
         confirmPressed: confirm && !prev.confirm,
@@ -2205,6 +2242,13 @@ class Game {
   handlePadUI() {
     if (this.awaitingKey) return;
     this.pads.forEach((pad, i) => {
+      // Online: SELECT held + d-pad sends a quick phrase instead of moving
+      if (pad.chat && this.chatAvailable()) {
+        const phrase = pad.dirPressed && QUICK_PHRASES.find(q => q.pad === pad.dirPressed);
+        if (phrase) this.sendChat(phrase.text);
+        pad.firePressed = false;
+        return;
+      }
       if (this.state === 'UPGRADE' && this.upgradeChoices) {
         const n = this.upgradeChoices.length;
         if (pad.dirPressed === 'LEFT' || pad.dirPressed === 'UP') this.upgradeIndex = (this.upgradeIndex + n - 1) % n;
@@ -3015,7 +3059,83 @@ class Game {
     return 'CONNECTION ERROR';
   }
 
+  // -------------------------------------------------------------
+  // ONLINE CHAT (messages go through the host, like everything else)
+  // -------------------------------------------------------------
+  chatAvailable() {
+    return !!(this.net && this.net.connected);
+  }
+
+  // A key the player bound to an action in SETTINGS keeps its action
+  isBoundCode(code) {
+    return [0, 1].some(idx => {
+      const b = this.getBindings(idx);
+      return b && Object.values(b).some(list => Array.isArray(list) && list.includes(code));
+    });
+  }
+
+  openChat() {
+    if (this.chatOpen || !this.chatAvailable()) return;
+    this.chatOpen = true;
+    // Let go of everything held, or the tank keeps driving while you type
+    this.keys = {};
+    this.dirHistory = this.dirHistory.map(() => []);
+    this.isMouseDown = false;
+    const input = document.getElementById('chat-input');
+    input.value = '';
+    input.classList.remove('hidden');
+    document.getElementById('chat-log').classList.add('open');
+    input.focus();
+  }
+
+  closeChat(send) {
+    if (!this.chatOpen) return;
+    this.chatOpen = false;
+    const input = document.getElementById('chat-input');
+    const text = input.value;
+    input.value = '';
+    input.classList.add('hidden');
+    input.blur();
+    document.getElementById('chat-log').classList.remove('open');
+    if (send) this.sendChat(text);
+  }
+
+  sendChat(text) {
+    text = cleanChatText(text);
+    if (!text || !this.chatAvailable()) return;
+    if (this.net.isHost) this.postChat(0, this.playerName, text);
+    else this.net.send({ t: 'chat', text });
+  }
+
+  // Host: show a message and pass it on to every guest
+  postChat(slot, name, text) {
+    text = cleanChatText(text);
+    if (!text) return;
+    this.showChat(slot, name, text);
+    this.net.send({ t: 'chat', slot, name, text });
+  }
+
+  showChat(slot, name, text) {
+    if (!text) return;
+    const log = document.getElementById('chat-log');
+    const line = document.createElement('div');
+    line.className = 'chat-line';
+    line.style.setProperty('--chat-life', CHAT_LINE_TIME + 'ms');
+    const who = document.createElement('span');
+    who.className = 'chat-name';
+    who.style.color = PLAYER_COLORS[Math.max(0, Math.min(MAX_PLAYERS - 1, slot))][0];
+    who.textContent = (name || this.defaultName(slot)) + ':';
+    line.append(who, ' ' + text);
+    log.appendChild(line);
+    while (log.children.length > CHAT_LINES) log.firstChild.remove();
+    setTimeout(() => line.remove(), CHAT_LINE_TIME);
+    // Played directly: the net wrapper around sounds would replay it on the guests
+    SoundEngine.prototype.playRicochet.call(sound, 'shield');
+  }
+
   closeNet() {
+    this.closeChat(false);
+    document.getElementById('chat-log').innerHTML = '';
     if (this.net) this.net.close();
     this.net = null;
     this.online = false;
@@ -3329,6 +3449,12 @@ class Game {
         if (this.playerNames) this.playerNames[peer.slot] = peer.name;
         if (this.net.big && !this.net.locked) this.renderLobby();
         this.updateHUD();
+      } else if (msg.t === 'chat') {
+        // Relay to everyone (the sender included); at most one message per 0.4 s
+        const now = performance.now();
+        if (now - (peer.lastChat || 0) < 400) return;
+        peer.lastChat = now;
+        this.postChat(peer.slot, peer.name, msg.text);
       } else if (msg.t === 'cmd') {
         if (msg.c === 'pause') this.togglePause();
         else if (msg.c === 'pick' && this.state === 'UPGRADE') this.pickUpgrade(msg.i | 0);
@@ -3348,6 +3474,8 @@ class Game {
       this.setNetStatus(this.netErrorText({ type: 'full' }));
     } else if (msg.t === 'lobby') {
       if (Array.isArray(msg.names)) this.renderLobby(msg.names.map(n => cleanPlayerName(n)).slice(0, MAX_PLAYERS));
+    } else if (msg.t === 'chat') {
+      this.showChat(msg.slot | 0, cleanPlayerName(msg.name), cleanChatText(msg.text));
     } else if (msg.t === 'snap') {
       if (msg.s) this.applySnapshot(msg.s);
       (msg.ui || []).forEach(u => this.applyNetUi(u));
