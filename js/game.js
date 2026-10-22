@@ -666,6 +666,7 @@ const PLAYER_COLORS = [
 ];
 const MAX_PLAYERS = 4;
 const FRIENDLY_FIRE_FREEZE = 3.0; // Classic Battle City: shooting your partner paralyses them
+const FIRE_BUFFER = 0.3;          // A fire press waits this long for the previous shell to be gone
 const VICTORY_DELAY = 5.0;        // Seconds the cleared field stays on screen before the tally
 const DAY_LENGTH = 180;           // Conquest: seconds for a full day and night
 const BOSS_PROBE = { isBoss: true, type: 'boss', y: 0 }; // Stand-in for a boss when testing a spot
@@ -761,6 +762,7 @@ class Game {
     this.dirHistory = [[], []];
     this.fireHeld = [false, false, false, false];
     this.fireAutoTimer = [0, 0, 0, 0];
+    this.fireBuffer = [0, 0, 0, 0]; // Seconds a pending fire press stays remembered
     this.menuIndex = 0;
     this.tallyTimers = [];
     this.tallyReady = false;
@@ -999,6 +1001,8 @@ class Game {
       [0, 1].forEach(idx => {
         const b = this.getBindings(idx);
         if (b && b.LIGHTS && b.LIGHTS.includes(e.code) && this.state === 'PLAYING') this.toggleLights(idx);
+        // A tap shorter than one physics step would never be seen as a held key
+        if (b && b.FIRE.includes(e.code) && !e.repeat && this.state === 'PLAYING' && !this.isGuest()) this.fireBuffer[idx] = FIRE_BUFFER;
       });
 
       if (this.state === 'UPGRADE' && this.upgradeChoices) {
@@ -1067,7 +1071,7 @@ class Game {
         e.preventDefault();
         this.isMouseDown = true;
         if (this.isGuest()) this.net.taps++;
-        else this.tryShoot(this.players[0]);
+        else this.fireBuffer[0] = FIRE_BUFFER;
       }
     });
     window.addEventListener('mouseup', () => {
@@ -1108,7 +1112,7 @@ class Game {
           return;
         }
         if (this.isGuest()) this.net.taps++;
-        else this.tryShoot(this.players[0]);
+        else this.fireBuffer[0] = FIRE_BUFFER;
       };
       fireBtn.addEventListener('touchstart', doFire, { passive: false });
       fireBtn.addEventListener('mousedown', doFire);
@@ -1525,6 +1529,7 @@ class Game {
     this.createPlayers();
     this.dirHistory = [[], []];
     this.fireHeld = [false, false, false, false];
+    this.fireBuffer = [0, 0, 0, 0];
     document.getElementById('game-overlay').classList.add('hidden');
     // Ensure every game start produces a brand new randomized battlefield
     this.startStage(this.stage, Math.floor(Math.random() * 9999999));
@@ -2235,6 +2240,7 @@ class Game {
     const input = this.readInput(idx);
     if (p.frozenTimer > 0) {
       p.moving = false;
+      this.fireBuffer[idx] = 0;
       return;
     }
 
@@ -2246,10 +2252,15 @@ class Game {
       p.moving = false;
     }
 
-    // Shooting (single press or hold to auto-fire)
-    if (input.tap || (input.fire && !this.fireHeld[idx])) {
-      this.tryShoot(p);
-      this.fireAutoTimer[idx] = 0.16;
+    // Shooting (single press or hold to auto-fire). A press while the previous shell
+    // is still flying is kept for FIRE_BUFFER and fires as soon as that shell is gone
+    if (input.tap || (input.fire && !this.fireHeld[idx])) this.fireBuffer[idx] = FIRE_BUFFER;
+    if (this.fireBuffer[idx] > 0) {
+      this.fireBuffer[idx] -= dt;
+      if (this.tryShoot(p)) {
+        this.fireBuffer[idx] = 0;
+        this.fireAutoTimer[idx] = 0.16;
+      }
     } else if (input.fire) {
       this.fireAutoTimer[idx] -= dt;
       if (this.fireAutoTimer[idx] <= 0 && this.tryShoot(p)) {
@@ -2354,6 +2365,13 @@ class Game {
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i];
       b.update(dt, this.map);
+
+      // Conquest: the map runs far above and below the screen; a shell that leaves the view
+      // is gone (otherwise it flies on unseen for seconds and its owner cannot fire)
+      if (!b.dead && this.layout.conquest && (b.y + b.h < this.camY || b.y > this.camY + this.viewH())) {
+        b.dead = true;
+        if (b.owner === 'player') sound.playRicochet('steel');
+      }
 
       if (b.dead) {
         this.removeBullet(i);
