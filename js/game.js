@@ -233,6 +233,33 @@ class GameMap {
     return false;
   }
 
+  // True if a 26px tank standing at px (x, y) is shut in: a flood fill over 2x2-tile spots that are
+  // not steel or water (brick counts as open: tanks shoot through it) finds fewer than `need` spots
+  isEnclosed(x, y, need = 24) {
+    const T = MapGenerator.TILES;
+    const c0 = Math.round((x - 3) / this.tileSize);
+    const r0 = Math.round((y - 3) / this.tileSize);
+    const open = (c, r) => c >= 0 && r >= 0 && c + 1 < this.cols && r + 1 < this.rows &&
+      [this.grid[r][c], this.grid[r][c + 1], this.grid[r + 1][c], this.grid[r + 1][c + 1]]
+        .every(t => t !== T.STEEL && t !== T.WATER);
+    if (!open(c0, r0)) return true;
+    const seen = new Set([r0 * this.cols + c0]);
+    const queue = [[c0, r0]];
+    while (queue.length) {
+      const [c, r] = queue.shift();
+      if (seen.size >= need) return false;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nc = c + dc;
+        const nr = r + dr;
+        const key = nr * this.cols + nc;
+        if (seen.has(key) || !open(nc, nr)) continue;
+        seen.add(key);
+        queue.push([nc, nr]);
+      }
+    }
+    return true;
+  }
+
   isSubBrickSolid(c, r, tx, ty, tw, th) {
     const mask = this.brickMasks[r][c];
     if (mask === 0) return false;
@@ -1898,6 +1925,25 @@ class Game {
 
     // Tanks that ended up inside a wall or another tank are pushed out
     this.players.concat(this.enemies).forEach(t => { if (!t.dead) this.unstickTank(t); });
+    // An enemy shut in a pocket of steel or water can never be reached: it blows up (no points)
+    this.trapCheck = (this.trapCheck || 0) - dt;
+    if (this.trapCheck <= 0) {
+      this.trapCheck = 1;
+      for (let i = this.enemies.length - 1; i >= 0; i--) {
+        const e = this.enemies[i];
+        if (e.isBoss || e.hasBoat || !this.map.isEnclosed(e.x, e.y)) {
+          e.trapped = 0;
+          continue;
+        }
+        e.trapped = (e.trapped || 0) + 1;
+        if (e.trapped < 2) continue;
+        this.explosions.push(new ExplosionEffect(e.x + 14, e.y + 14, true));
+        this.spawnTankDebris(e.x + 14, e.y + 14, ['#78909c', '#b0bec5', '#455a64']);
+        sound.playExplosion(true);
+        this.enemies.splice(i, 1);
+        this.renderReserveIcons();
+      }
+    }
 
     // Update bullets & collision detection
     this.updateBullets(dt);
@@ -2181,7 +2227,7 @@ class Game {
     const railY = Math.round((t.y - 3) / 16) * 16 + 3;
     const tries = [[railX, railY]].concat(Game.unstickOffsets.map(([dx, dy]) => [t.x + dx, t.y + dy]));
     for (const [x, y] of tries) {
-      if (!this.map.isBlocked(x, y, t.w, t.h, t.hasBoat, t, true)) {
+      if (!this.map.isBlocked(x, y, t.w, t.h, t.hasBoat, t, true) && (t.isBoss || !this.map.isEnclosed(x, y))) {
         t.x = x;
         t.y = y;
         t.stuckFrames = 0;
@@ -4384,6 +4430,7 @@ class Game {
       const x = c * 16 + 3;
       const y = r * 16 + 3;
       if (this.map.isBlocked(x, y, 26, 26, false, null)) continue;
+      if (this.map.isEnclosed(x, y)) continue; // Never inside a pocket in steel or water
       if (this.cities.some(city => city.captured && this.inZone(city, x + 13, y + 13))) continue;
       this.queueConquestEnemy(x, y, null);
       return;
@@ -4455,7 +4502,8 @@ class Game {
       if (defenders >= wanted || city.spawnTimer > 0) return;
       city.spawnTimer = city.alarm > 0 ? 1.5 : 3.5;
       // Not behind the bottom of the screen (nobody may be left behind there)
-      const free = city.spawns.filter(s => s.y + 26 <= this.camY + this.viewH() && !this.map.isBlocked(s.x, s.y, 26, 26, false, null));
+      const free = city.spawns.filter(s => s.y + 26 <= this.camY + this.viewH() &&
+        !this.map.isBlocked(s.x, s.y, 26, 26, false, null) && !this.map.isEnclosed(s.x, s.y));
       if (free.length) {
         const s = free[Math.floor(Math.random() * free.length)];
         this.queueConquestEnemy(s.x, s.y, city);
@@ -4585,6 +4633,19 @@ class Game {
     });
   }
 
+  // The wall cell under a destroyed turret becomes brick again (no empty pocket in the wall)
+  fillTurretCell(t) {
+    const c = Math.floor((t.x - 4) / 16);
+    const r = Math.floor((t.y - 4) / 16);
+    for (let dr = 0; dr < 2; dr++) {
+      for (let dc = 0; dc < 2; dc++) {
+        if (!this.map.grid[r + dr] || c + dc >= this.map.cols) continue;
+        this.map.grid[r + dr][c + dc] = MapGenerator.TILES.BRICK;
+        this.map.brickMasks[r + dr][c + dc] = 0x0F;
+      }
+    }
+  }
+
   hitTurret(t, bullet) {
     if (bullet.owner !== 'player') return;
     t.hp--;
@@ -4592,6 +4653,7 @@ class Game {
     sound.playRicochet('armor');
     if (t.hp > 0) return;
     t.alive = false;
+    this.fillTurretCell(t);
     this.explosions.push(new ExplosionEffect(t.x + 12, t.y + 12, true));
     this.spawnTankDebris(t.x + 12, t.y + 12, ['#5d6674', '#9aa5b4', '#ff7043']);
     this.addScreenShake(4);
@@ -4708,6 +4770,7 @@ class Game {
     this.turrets.forEach(t => {
       if (t.group !== city.group || !t.alive) return;
       t.alive = false;
+      this.fillTurretCell(t);
       this.explosions.push(new ExplosionEffect(t.x + 12, t.y + 12, true));
       this.spawnTankDebris(t.x + 12, t.y + 12, ['#5d6674', '#9aa5b4', '#ff7043']);
     });
@@ -4762,7 +4825,7 @@ class Game {
         const x = Math.round((home.x - 48 + Math.random() * 96 - 3) / 16) * 16 + 3;
         const y = Math.round((home.y - 48 + Math.random() * 96 - 3) / 16) * 16 + 3;
         if (y < this.camY + 4 || y + 26 > this.camY + this.viewH() - 4) continue;
-        if (!this.map.isBlocked(x, y, 26, 26, false, p, true)) {
+        if (!this.map.isBlocked(x, y, 26, 26, false, p, true) && !this.map.isEnclosed(x, y)) {
           p.spawnX = x;
           p.spawnY = y;
           return;
@@ -4781,6 +4844,7 @@ class Game {
         const x = c * 16 + 3;
         const y = r * 16 + 3;
         if (this.players.concat(this.enemies).some(t => t !== p && !t.dead && Math.abs(t.x - x) < 28 && Math.abs(t.y - y) < 28)) continue;
+        if (this.map.isEnclosed(x, y)) continue;
         p.spawnX = x;
         p.spawnY = y;
         return;
