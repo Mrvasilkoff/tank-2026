@@ -816,6 +816,7 @@ class Game {
     this.renderReserveIcons(false);
     this.updateHUD();
     if (!/selftest/.test(location.search)) this.startDemo();
+    this.joinFromLink();
   }
 
   createPlayers() {
@@ -1141,8 +1142,7 @@ class Game {
     // Room code: click to copy
     const codeEl = document.getElementById('net-code');
     codeEl.addEventListener('click', () => {
-      if (navigator.clipboard && codeEl.textContent) {
-        navigator.clipboard.writeText(codeEl.textContent).catch(() => {});
+      if (codeEl.textContent && this.copyText(codeEl.textContent)) {
         this.setNetStatus('CODE COPIED', true);
       }
     });
@@ -1230,9 +1230,11 @@ class Game {
       ],
       lobby: [
         ['START', () => this.startBigOnline()],
+        ['COPY LINK', () => this.copyRoomLink()],
         ['BACK', () => { this.closeNet(); this.showMenu('online', 1); }]
       ],
       hosting: [
+        ['COPY LINK', () => this.copyRoomLink()],
         ['BACK', () => { this.closeNet(); this.showMenu('online'); }]
       ],
       join: [
@@ -3020,7 +3022,7 @@ class Game {
     this.remoteInputs = [];
     this.remoteTapsSeen = [];
     document.getElementById('net-code').textContent = '';
-    this.showMenu(big ? 'lobby' : 'hosting');
+    this.showMenu(big ? 'lobby' : 'hosting', big ? 1 : 0); // Cursor on COPY LINK
     this.renderLobby();
     this.setNetStatus('CREATING ROOM', true);
     net.host(code => {
@@ -3104,6 +3106,57 @@ class Game {
     if (this.net && this.net.isHost && this.net.big) {
       this.net.send({ t: 'lobby', names: list });
     }
+  }
+
+  // Clipboard, with the old execCommand fallback for plain-http pages (LAN address)
+  copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).catch(() => {});
+      return true;
+    }
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (e) {
+      // Copy refused: the caller shows the code instead
+    }
+    area.remove();
+    return ok;
+  }
+
+  // Host: link that opens the game straight into this room (?join=CODE)
+  copyRoomLink() {
+    const code = document.getElementById('net-code').textContent;
+    if (!code) return; // Room not created yet
+    const link = location.origin + location.pathname + '?join=' + code;
+    if (!this.copyText(link)) {
+      this.setNetStatus('COPY FAILED, SEND THE CODE');
+      return;
+    }
+    // A localhost link only opens on this computer
+    const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname) || location.protocol === 'file:';
+    this.setNetStatus(local ? 'LINK COPIED (THIS PC ONLY)' : 'LINK COPIED', true);
+  }
+
+  // Guest: ?join=CODE in the address connects to that room right away
+  joinFromLink() {
+    const params = new URLSearchParams(location.search);
+    const code = (params.get('join') || '').trim().toUpperCase();
+    if (!code) return;
+    // Drop it from the address so a reload later does not rejoin an old room
+    params.delete('join');
+    const query = params.toString();
+    history.replaceState(null, '', location.pathname + (query ? '?' + query : '') + location.hash);
+    if (!/^[A-Z0-9]{4,6}$/.test(code)) return;
+    this.showMenu('join');
+    document.getElementById('net-join-code').value = code;
+    this.joinOnline();
   }
 
   joinOnline() {
