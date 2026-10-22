@@ -1,0 +1,1251 @@
+/* TANK 2026 - Modern Retro Arcade Styling */
+
+:root {
+  --arcade-bg: #0d0f12;
+  --arcade-bezel: #1b1e24;
+  --nes-sidebar-bg: #636363;
+  --nes-border-dark: #3b3b3b;
+  --nes-border-light: #9e9e9e;
+  --nes-black: #000000;
+  --nes-white: #ffffff;
+  --nes-red: #e52521;
+  --nes-yellow: #f8b800;
+  --nes-green: #00b020;
+  --nes-cyan: #00e8d8;
+  --nes-orange: #fc7400;
+  --crt-glow: rgba(0, 230, 255, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: 
+    radial-gradient(ellipse at center, rgba(10, 14, 20, 0.65) 0%, rgba(5, 7, 10, 0.95) 100%),
+    url('assets/backdrop.jpg') center center / cover no-repeat fixed;
+  color: #fff;
+  font-family: 'Press Start 2P', monospace;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  padding: 8px;
+}
+
+#arcade-cabinet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: linear-gradient(145deg, rgba(32, 38, 48, 0.94), rgba(15, 18, 24, 0.98));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 18px;
+  box-shadow: 
+    0 30px 80px rgba(0, 0, 0, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 0 50px rgba(229, 37, 33, 0.2),
+    0 0 100px rgba(0, 229, 255, 0.1);
+  padding: 10px 12px 12px;
+  border: 2px solid rgba(80, 95, 120, 0.5);
+}
+
+/* Header */
+#arcade-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  letter-spacing: 1px;
+}
+
+.logo-red {
+  color: var(--nes-red);
+  text-shadow: 2px 2px 0 #570a08, 0 0 10px rgba(229, 37, 33, 0.5);
+}
+
+.logo-yellow {
+  color: var(--nes-yellow);
+  text-shadow: 2px 2px 0 #6d5000, 0 0 10px rgba(248, 184, 0, 0.5);
+}
+
+.header-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.arcade-btn {
+  background: linear-gradient(to bottom, #3a3f4d, #20242c);
+  color: #e0e0e0;
+  border: 2px solid #525866;
+  border-radius: 6px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  padding: 6px 10px;
+  cursor: pointer;
+  box-shadow: 0 3px 0 #111;
+  transition: all 0.1s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.arcade-btn:hover {
+  background: linear-gradient(to bottom, #4d5466, #2a303b);
+  border-color: var(--nes-yellow);
+  color: #fff;
+}
+
+.arcade-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #111;
+}
+
+.arcade-btn.small {
+  font-size: 8px;
+  padding: 5px 8px;
+}
+
+/* Game Outer Wrapper */
+#game-wrapper {
+  position: relative;
+  display: flex;
+  background: var(--nes-sidebar-bg);
+  border: 6px solid #111;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.9);
+  zoom: var(--ui-scale, 1);
+}
+
+/* CRT Overlay effects */
+.crt-active .crt-scanlines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.25) 50%
+  );
+  background-size: 100% 4px;
+}
+
+.crt-active .crt-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9;
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.7);
+}
+
+/* Canvas Area */
+#canvas-container {
+  position: relative;
+  width: 480px;
+  height: 480px;
+  background-color: #0d1017;
+}
+
+canvas#gameCanvas {
+  display: block;
+  width: 480px;
+  height: 480px;
+  background: #0f1319;
+  cursor: crosshair;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
+}
+
+/* Right Sidebar (Modern Tactical Command Panel) */
+#game-sidebar {
+  width: 80px;
+  background: linear-gradient(180deg, #1d222c, #11141a);
+  border-left: 3px solid #2d3442;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 6px;
+  font-size: 10px;
+  justify-content: space-between;
+  box-shadow: inset 5px 0 15px rgba(0, 0, 0, 0.5);
+}
+
+.hud-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.hud-label {
+  font-size: 9px;
+  color: #ffb300;
+  font-weight: bold;
+  margin-bottom: 4px;
+  text-shadow: 0 0 8px rgba(255, 179, 0, 0.5);
+  letter-spacing: 0.5px;
+}
+
+.hud-label.mini {
+  font-size: 7px;
+  letter-spacing: 0.5px;
+}
+
+/* Enemy Reserve Icons (2 columns of 10) */
+.enemy-counter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 14px);
+  gap: 3px 6px;
+  justify-content: center;
+  min-height: 160px;
+}
+
+.enemy-icon {
+  width: 14px;
+  height: 14px;
+  background-color: #ff3d00;
+  mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><path fill="black" d="M3 0h2v3H3zM1 2h6v2H1zM0 3h8v5H0zM2 4h4v3H2z"/></svg>');
+  -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><path fill="black" d="M3 0h2v3H3zM1 2h6v2H1zM0 3h8v5H0zM2 4h4v3H2z"/></svg>');
+  mask-size: contain;
+  -webkit-mask-size: contain;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+}
+
+.enemy-icon.active {
+  background-color: #ff3d00;
+  box-shadow: 0 0 8px rgba(255, 61, 0, 0.7);
+  filter: drop-shadow(0 0 2px #ff3d00);
+}
+
+.enemy-icon.killed {
+  background-color: #37474f;
+  opacity: 0.25;
+}
+
+/* Lives indicator */
+.lives-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tank-symbol {
+  width: 13px;
+  height: 13px;
+  background-color: #ffb300;
+  mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><path fill="black" d="M3 0h2v3H3zM1 2h6v2H1zM0 3h8v5H0zM2 4h4v3H2z"/></svg>');
+  -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><path fill="black" d="M3 0h2v3H3zM1 2h6v2H1zM0 3h8v5H0zM2 4h4v3H2z"/></svg>');
+  mask-size: contain;
+  -webkit-mask-size: contain;
+  filter: drop-shadow(0 0 3px #ffd700);
+}
+
+.tank-symbol.p2 {
+  background-color: #43c94b;
+  filter: drop-shadow(0 0 3px #43c94b);
+}
+
+.digit {
+  font-size: 15px;
+  color: #ffd700;
+  font-weight: bold;
+  font-family: 'Press Start 2P', monospace;
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+}
+
+/* Stars Upgrade Level indicator in HUD */
+.stars-indicator {
+  display: flex;
+  gap: 3px;
+  justify-content: center;
+  align-items: center;
+  margin-top: 5px;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 3px 5px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 215, 0, 0.25);
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.8);
+}
+
+.star-slot {
+  font-size: 11px;
+  color: #3e4654;
+  line-height: 1;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.star-slot.active {
+  color: #ffd700;
+  text-shadow: 0 0 8px #ffb300, 0 0 14px #ff6f00;
+  animation: starPulse 1.4s infinite alternate;
+}
+
+@keyframes starPulse {
+  from { transform: scale(1); filter: brightness(1); }
+  to { transform: scale(1.15); filter: brightness(1.35); }
+}
+
+/* Powerup badges */
+.powerups-hud {
+  min-height: 22px;
+}
+
+#active-powerups-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+}
+
+.bonus-badge {
+  font-size: 11px;
+  animation: badgeIn 0.35s cubic-bezier(.2,1.6,.4,1), badgeGlow 1.2s ease-in-out infinite alternate;
+  background: #111;
+  color: var(--nes-yellow);
+  padding: 3px 2px;
+  border-radius: 2px;
+  text-align: center;
+  border: 1px solid var(--nes-yellow);
+}
+
+.bonus-badge.hidden {
+  display: none;
+}
+
+/* Stage status */
+.stage-status {
+  margin-top: 4px;
+}
+
+.flag-icon {
+  font-size: 18px;
+  margin-bottom: 2px;
+}
+
+.stage-digit {
+  font-size: 16px;
+}
+
+/* Score hud */
+.score-section {
+  margin-bottom: 0;
+}
+
+.score-digit {
+  font-size: 8px;
+  color: #ffd700;
+  margin-bottom: 4px;
+  font-family: 'Press Start 2P', monospace;
+}
+
+/* Overlay Screen (Title / Pause / Game Over) */
+.overlay-screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.94);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 20;
+  transition: opacity 0.2s ease;
+}
+
+.overlay-screen.hidden {
+  display: none;
+  opacity: 0;
+}
+
+.title-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 20px;
+}
+
+.game-logo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-size: 40px;
+  letter-spacing: 4px;
+  color: var(--nes-red);
+  text-shadow: 
+    3px 3px 0 #ff8000,
+    -2px -2px 0 #fff;
+  margin-bottom: 18px;
+}
+
+.logo-line {
+  display: block;
+  animation: logoRise 0.9s cubic-bezier(.2,.9,.3,1.2) both, logoFlicker 3s 1s infinite;
+}
+
+.logo-line.delay {
+  color: var(--nes-yellow);
+  animation-delay: 0.15s, 1.15s;
+}
+
+@keyframes logoRise {
+  from { transform: translateY(260px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes logoFlicker {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+.sub-title {
+  font-size: 9px;
+  color: var(--nes-yellow);
+  margin-bottom: 18px;
+  letter-spacing: 1px;
+  min-height: 1px;
+}
+
+.sub-title:empty {
+  margin: 0;
+}
+
+.game-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 28px;
+  animation: fadeUp 0.6s 0.7s both;
+}
+
+.menu-option {
+  position: relative;
+  background: none;
+  border: none;
+  color: #fff;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 14px;
+  padding: 4px 0 4px 34px;
+  cursor: pointer;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.menu-option:hover,
+.menu-option.selected {
+  color: var(--nes-yellow);
+}
+
+.menu-option.selected {
+  transform: translateX(4px);
+}
+
+.menu-cursor {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  margin-top: -10px;
+  background-color: #ffb300;
+  mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><path fill="black" d="M3 0h2v3H3zM1 2h6v2H1zM0 3h8v5H0zM2 4h4v3H2z"/></svg>');
+  -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><path fill="black" d="M3 0h2v3H3zM1 2h6v2H1zM0 3h8v5H0zM2 4h4v3H2z"/></svg>');
+  mask-size: contain;
+  -webkit-mask-size: contain;
+  transform: rotate(90deg);
+  opacity: 0;
+}
+
+.menu-option.selected .menu-cursor {
+  opacity: 1;
+  animation: cursorTread 0.24s steps(2) infinite;
+}
+
+@keyframes cursorTread {
+  0% { transform: rotate(90deg) translateY(0); }
+  100% { transform: rotate(90deg) translateY(-2px); }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.high-score-board {
+  font-size: 10px;
+  color: #fff;
+  animation: fadeUp 0.6s 0.9s both;
+}
+
+/* Stage Curtain Transition */
+.stage-curtain {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 25;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: transparent;
+  overflow: hidden;
+}
+
+.curtain-top,
+.curtain-bottom {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 50%;
+  background: #636363;
+}
+
+.curtain-top {
+  top: 0;
+  animation: curtainCloseTop 0.45s ease-in both;
+}
+
+.curtain-bottom {
+  bottom: 0;
+  animation: curtainCloseBottom 0.45s ease-in both;
+}
+
+.stage-curtain.opening .curtain-top {
+  animation: curtainOpenTop 0.5s ease-out forwards;
+}
+
+.stage-curtain.opening .curtain-bottom {
+  animation: curtainOpenBottom 0.5s ease-out forwards;
+}
+
+.stage-curtain.opening .stage-text {
+  animation: stageTextOut 0.2s ease-out forwards;
+}
+
+@keyframes curtainCloseTop { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+@keyframes curtainCloseBottom { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes curtainOpenTop { from { transform: translateY(0); } to { transform: translateY(-100%); } }
+@keyframes curtainOpenBottom { from { transform: translateY(0); } to { transform: translateY(100%); } }
+@keyframes stageTextOut { to { opacity: 0; } }
+@keyframes stageTextIn {
+  from { opacity: 0; letter-spacing: 12px; }
+  to { opacity: 1; letter-spacing: 0; }
+}
+
+.stage-curtain.hidden {
+  display: none;
+}
+
+.stage-text {
+  position: relative;
+  font-size: 20px;
+  color: #000;
+  font-weight: bold;
+  animation: stageTextIn 0.4s 0.4s ease-out both;
+}
+
+/* Tally Score Screen */
+.tally-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+}
+
+.tally-overlay.hidden {
+  display: none;
+}
+
+.tally-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.tally-header h2 {
+  font-size: 14px;
+  color: var(--nes-red);
+  margin-bottom: 12px;
+}
+
+.tally-score-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 40px;
+  font-size: 11px;
+  color: var(--nes-yellow);
+}
+
+.tally-player {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.tally-plabel {
+  color: var(--nes-red);
+}
+
+.tally-table {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 260px;
+  border-top: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  padding: 16px 0;
+  margin-bottom: 20px;
+}
+
+.tally-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 10px;
+  opacity: 0;
+  transform: translateX(-12px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.tally-row.shown {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.tally-count.bump {
+  animation: digitBump 0.12s ease-out;
+}
+
+.tally-pts {
+  color: #fff;
+  width: 90px;
+}
+
+.tally-count {
+  color: #fff;
+  font-size: 12px;
+}
+
+.tally-icon {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+}
+
+.tally-total-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--nes-yellow);
+  padding-top: 8px;
+  border-top: 1px dashed #555;
+}
+
+.tally-next-prompt {
+  font-size: 12px;
+  color: var(--nes-yellow);
+  animation: blink 1s infinite;
+  visibility: hidden;
+}
+
+.tally-next-prompt.ready {
+  visibility: visible;
+}
+
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* Touch Controls */
+#touch-controls {
+  display: none;
+  width: 100%;
+  margin-top: 14px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 10px;
+}
+
+#touch-controls.force-visible {
+  display: flex !important;
+}
+
+.arcade-btn.active {
+  background: var(--nes-yellow);
+  color: #000;
+  border-color: #fff;
+}
+
+@media (max-width: 650px), (pointer: coarse) {
+  #touch-controls {
+    display: flex;
+  }
+}
+
+#dpad {
+  display: grid;
+  grid-template-areas:
+    ". up ."
+    "left center right"
+    ". down .";
+  gap: 4px;
+  width: 130px;
+  height: 130px;
+}
+
+.dpad-btn {
+  background: #2b2e38;
+  color: #fff;
+  border: 2px solid #4a5061;
+  font-size: 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  touch-action: manipulation;
+}
+
+.dpad-btn:active, .dpad-btn.pressed {
+  background: var(--nes-yellow);
+  color: #000;
+}
+
+.dpad-btn.up { grid-area: up; }
+.dpad-btn.left { grid-area: left; }
+.dpad-btn.center { grid-area: center; background: #1f2129; border: none; font-size: 8px; color: #555; }
+.dpad-btn.right { grid-area: right; }
+.dpad-btn.down { grid-area: down; }
+
+#action-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.action-btn {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.4);
+  touch-action: manipulation;
+}
+
+.action-btn.fire {
+  background: var(--nes-red);
+  border: 3px solid #ff7b78;
+}
+
+.action-btn.fire:active {
+  transform: translateY(2px);
+  background: #ff3330;
+}
+
+.action-btn.pause {
+  background: #444;
+  border: 3px solid #777;
+  width: 50px;
+  height: 50px;
+  font-size: 7px;
+}
+
+/* Modal Dialog */
+#modal-rules {
+  background: #1b1e24;
+  border: 3px solid var(--nes-yellow);
+  color: #fff;
+  border-radius: 10px;
+  padding: 20px;
+  max-width: 480px;
+  width: 90%;
+  margin: auto;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9);
+}
+
+#modal-rules::backdrop {
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+}
+
+.modal-content h2 {
+  font-size: 13px;
+  color: var(--nes-yellow);
+  margin-bottom: 14px;
+  text-align: center;
+}
+
+.modal-body {
+  font-size: 8px;
+  line-height: 1.6;
+  margin-bottom: 16px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.modal-body p {
+  margin-bottom: 12px;
+}
+
+.modal-body h3 {
+  font-size: 9px;
+  color: var(--nes-cyan);
+  margin: 10px 0 6px 0;
+}
+
+.modal-body ul {
+  list-style: none;
+  padding-left: 0;
+  margin-bottom: 12px;
+}
+
+.modal-body li {
+  margin-bottom: 6px;
+}
+
+#btn-close-rules {
+  display: block;
+  margin: 0 auto;
+  background: var(--nes-red);
+}
+
+/* Two-player mode visibility */
+#arcade-cabinet:not(.two-players) .p2-only {
+  display: none !important;
+}
+
+.hud-label.p2,
+.score-digit.p2 {
+  color: #43c94b;
+  text-shadow: 0 0 8px rgba(67, 201, 75, 0.5);
+}
+
+/* HUD micro-animations */
+.bump {
+  animation: digitBump 0.35s ease-out;
+}
+
+@keyframes digitBump {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.5); filter: brightness(1.6); }
+  100% { transform: scale(1); }
+}
+
+.enemy-icon.vanish {
+  animation: iconVanish 0.45s ease-out forwards;
+}
+
+@keyframes iconVanish {
+  0% { transform: scale(1); background-color: #fff; }
+  50% { transform: scale(1.6); background-color: #ffd700; }
+  100% { transform: scale(1); background-color: #37474f; opacity: 0.25; }
+}
+
+@keyframes badgeIn {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
+
+@keyframes badgeGlow {
+  from { box-shadow: 0 0 2px rgba(248, 184, 0, 0.3); }
+  to { box-shadow: 0 0 8px rgba(248, 184, 0, 0.9); }
+}
+
+.overlay-screen.active:not(.hidden) .title-content {
+  animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+#canvas-container.flash::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  pointer-events: none;
+  animation: screenFlash 0.35s ease-out forwards;
+  z-index: 5;
+}
+
+@keyframes screenFlash {
+  from { opacity: 0.8; }
+  to { opacity: 0; }
+}
+
+/* Tally columns: I-player pts | count | icon | II-player count | pts */
+.tally-row,
+.tally-total-row {
+  display: grid;
+  grid-template-columns: 90px 40px 32px;
+  justify-content: center;
+}
+
+.two-players .tally-row,
+.two-players .tally-total-row {
+  grid-template-columns: 90px 40px 32px 40px 90px;
+}
+
+.tally-total-row > :nth-child(3) {
+  grid-column: 4;
+}
+
+.tally-count,
+.tally-total-row > :not(:first-child) {
+  text-align: center;
+}
+
+.tally-pts.p2-only {
+  text-align: right;
+}
+
+/* Online play: room code & join input */
+#net-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 18px;
+  animation: fadeUp 0.3s both;
+}
+
+#net-panel.hidden,
+#net-panel .hidden {
+  display: none;
+}
+
+.net-code {
+  font-size: 26px;
+  letter-spacing: 6px;
+  color: var(--nes-yellow);
+  text-shadow: 0 0 12px rgba(248, 184, 0, 0.6);
+  cursor: pointer;
+  padding: 6px 10px;
+  border: 2px dashed rgba(248, 184, 0, 0.5);
+  animation: codePulse 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes codePulse {
+  from { border-color: rgba(248, 184, 0, 0.25); }
+  to { border-color: rgba(248, 184, 0, 0.9); }
+}
+
+.net-input {
+  width: 200px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 20px;
+  letter-spacing: 6px;
+  text-align: center;
+  text-transform: uppercase;
+  color: #fff;
+  background: #111;
+  border: 2px solid var(--nes-yellow);
+  padding: 8px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.net-input:focus {
+  box-shadow: 0 0 12px rgba(248, 184, 0, 0.6);
+}
+
+.sub-title.net-wait::after {
+  content: '';
+  animation: netDots 1.2s steps(4) infinite;
+}
+
+@keyframes netDots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+}
+
+.net-input.net-name {
+  width: 220px;
+  font-size: 14px;
+  letter-spacing: 3px;
+  border-color: #666;
+  margin-bottom: 4px;
+}
+
+.net-input.net-name:focus {
+  border-color: var(--nes-yellow);
+}
+
+.hud-label.name {
+  font-size: 7px;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+}
+
+/* -------------------------------------------------------------
+   Big map (up to 4 online players, two Eagles)
+   ------------------------------------------------------------- */
+#arcade-cabinet:not(.big-mode) .big-only {
+  display: none !important;
+}
+
+.big-mode .classic-only,
+.player-status.absent {
+  display: none !important;
+}
+
+.hud-label.p3,
+.score-digit.p3 {
+  color: #42a5f5;
+  text-shadow: 0 0 8px rgba(66, 165, 245, 0.5);
+}
+
+.hud-label.p4,
+.score-digit.p4 {
+  color: #ec4fa0;
+  text-shadow: 0 0 8px rgba(236, 79, 160, 0.5);
+}
+
+.tank-symbol.p3 {
+  background-color: #42a5f5;
+  filter: drop-shadow(0 0 3px #42a5f5);
+}
+
+.tank-symbol.p4 {
+  background-color: #ec4fa0;
+  filter: drop-shadow(0 0 3px #ec4fa0);
+}
+
+/* Compact sidebar so four players, 30 reserve tanks and the stage fit */
+.big-mode .enemy-counter-grid {
+  grid-template-columns: repeat(3, 12px);
+  gap: 2px 4px;
+  min-height: 0;
+}
+
+.big-mode .enemy-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.big-mode .hud-section {
+  margin-bottom: 4px;
+}
+
+.big-mode .player-status .hud-label {
+  font-size: 7px;
+  margin-bottom: 2px;
+}
+
+.big-mode .digit {
+  font-size: 12px;
+}
+
+.big-mode .stars-indicator {
+  margin-top: 2px;
+  padding: 1px 4px;
+}
+
+.big-mode .star-slot {
+  font-size: 9px;
+}
+
+.score-digit.pscore {
+  margin: 2px 0 0;
+  font-size: 7px;
+}
+
+/* Lobby: four coloured player slots */
+.net-lobby {
+  display: grid;
+  grid-template-columns: repeat(2, 150px);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.lobby-slot {
+  font-size: 10px;
+  padding: 8px 6px;
+  border: 2px dashed #444;
+  color: #555;
+  text-align: center;
+  transition: all 0.25s ease;
+}
+
+.lobby-slot.taken {
+  border-style: solid;
+  border-color: var(--slot-color);
+  color: #fff;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--slot-color) 50%, transparent);
+  animation: slotIn 0.35s cubic-bezier(.2, 1.6, .4, 1);
+}
+
+@keyframes slotIn {
+  from { transform: scale(0.6); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* Big-map tally: one column per player */
+.big-mode .tally-score-row,
+.big-mode .tally-table {
+  display: none;
+}
+
+#arcade-cabinet:not(.big-mode) .tally-big {
+  display: none;
+}
+
+.tally-big {
+  display: grid;
+  gap: 10px 18px;
+  align-items: center;
+  justify-items: center;
+  font-size: 11px;
+  margin-bottom: 20px;
+  padding: 14px 0;
+  border-top: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+}
+
+.tally-big .tb-name {
+  font-size: 9px;
+  white-space: nowrap;
+  color: var(--slot-color);
+}
+
+.tally-big .tb-score {
+  color: var(--nes-yellow);
+}
+
+.tally-big .tb-total {
+  color: var(--nes-yellow);
+  justify-self: start;
+}
+
+/* Main menu has more entries now */
+.game-menu {
+  gap: 10px;
+}
+
+/* SETTINGS: compact two-column grid (player I | player II) */
+.game-menu.compact {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, auto));
+  gap: 6px 22px;
+  margin-bottom: 18px;
+}
+
+.game-menu.compact .menu-option {
+  font-size: 9px;
+  padding: 3px 0 3px 18px;
+  text-align: left;
+}
+
+.game-menu.compact .menu-option:first-child,
+.game-menu.compact .menu-option:nth-last-child(-n + 2) {
+  grid-column: 1 / -1;
+}
+
+.game-menu.compact .menu-cursor {
+  width: 11px;
+  height: 11px;
+  margin-top: -5.5px;
+}
+
+/* Pause: the field stays visible behind the menu */
+#game-overlay.pause-mode {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+#game-overlay.pause-mode .high-score-board {
+  display: none;
+}
+
+/* RECORDS */
+.records-table {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 300px;
+  margin-bottom: 18px;
+  font-size: 10px;
+  color: #ddd;
+}
+
+.records-table.hidden {
+  display: none;
+}
+
+.record-row {
+  display: grid;
+  grid-template-columns: 30px 1fr 80px 50px;
+  gap: 8px;
+  text-align: left;
+  animation: fadeUp 0.3s both;
+}
+
+.record-row:nth-child(1) { color: var(--nes-yellow); }
+.record-row .rc2 { text-align: right; }
+.record-row .rc3 { color: #888; text-align: right; }
+
+.record-row.fresh {
+  color: #fff;
+  text-shadow: 0 0 8px rgba(248, 184, 0, 0.8);
+  animation: fadeUp 0.3s both, blink 1s 0.3s 3;
+}
+
+/* Conquest mode: distance instead of the enemy reserve */
+#arcade-cabinet:not(.conquest-mode) .conquest-only {
+  display: none !important;
+}
+
+.conquest-mode .classic-reserve {
+  display: none !important;
+}
+
+.conquest-only .digit {
+  font-size: 13px;
+}

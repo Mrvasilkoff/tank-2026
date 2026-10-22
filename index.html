@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>TANK 2026</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="arcade-cabinet">
+    <!-- Top Header Bar -->
+    <header id="arcade-header">
+      <div class="header-title">
+        <span class="logo-red">TANK</span>
+        <span class="logo-yellow">2026</span>
+      </div>
+      <div class="header-controls">
+        <button id="btn-sound" class="arcade-btn small" title="Звук (M)"><span class="btn-icon">🔊</span></button>
+        <button id="btn-crt" class="arcade-btn small" title="CRT фильтр"><span class="btn-icon">📺</span></button>
+        <button id="btn-touch-toggle" class="arcade-btn small" title="Экранные кнопки"><span class="btn-icon">🎮</span></button>
+        <button id="btn-seed" class="arcade-btn small" title="Новая карта (N)"><span class="btn-icon">🎲</span></button>
+        <button id="btn-howtoplay" class="arcade-btn small" title="Правила и управление"><span class="btn-icon">?</span></button>
+      </div>
+    </header>
+
+    <!-- Main Game Container -->
+    <div id="game-wrapper" class="crt-clean">
+      <div class="crt-scanlines"></div>
+      <div class="crt-glow"></div>
+
+      <!-- Playfield Canvas -->
+      <div id="canvas-container">
+        <canvas id="gameCanvas" width="832" height="832"></canvas>
+
+        <!-- Overlay for Title / Game Over -->
+        <div id="game-overlay" class="overlay-screen active">
+          <div class="title-content">
+            <h1 class="game-logo">
+              <span class="logo-line">TANK</span>
+              <span class="logo-line delay">2026</span>
+            </h1>
+            <p class="sub-title"></p>
+
+            <div id="net-panel" class="hidden">
+              <input id="net-name" class="net-input net-name" maxlength="8" placeholder="ИМЯ" autocomplete="off" spellcheck="false" title="Ваше имя">
+              <div id="net-code" class="net-code" title="Скопировать код"></div>
+              <div id="net-lobby" class="net-lobby hidden"></div>
+              <input id="net-join-code" class="net-input" maxlength="6" placeholder="КОД" autocomplete="off" spellcheck="false">
+            </div>
+
+            <div id="records-table" class="records-table hidden"></div>
+
+            <div class="game-menu" id="game-menu"></div>
+
+            <div class="high-score-board">
+              <span>HI- </span><span id="menu-hiscore">20000</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stage Intermission Screen -->
+        <div id="stage-screen" class="stage-curtain hidden">
+          <div class="curtain-top"></div>
+          <div class="curtain-bottom"></div>
+          <div class="stage-text">STAGE <span id="stage-num-curtain">1</span></div>
+        </div>
+
+        <!-- Tally Score Screen (End of Level) -->
+        <div id="tally-screen" class="tally-overlay hidden">
+          <div class="tally-header">
+            <h2>STAGE <span id="tally-stage-num">1</span></h2>
+            <div class="tally-score-row">
+              <div class="tally-player">
+                <span class="tally-plabel" id="tally-p1-label">I-PLAYER</span>
+                <span id="tally-player-score">0</span>
+              </div>
+              <div class="tally-player p2-only">
+                <span class="tally-plabel" id="tally-p2-label">II-PLAYER</span>
+                <span id="tally-player2-score">0</span>
+              </div>
+            </div>
+          </div>
+          <div class="tally-table">
+            <div class="tally-row" id="tally-row-0">
+              <span class="tally-pts" id="tally-pts-0">0 PTS</span>
+              <span class="tally-count" id="tally-count-0">0</span>
+              <canvas class="tally-icon" id="tally-icon-0" width="32" height="32"></canvas>
+              <span class="tally-count p2-only" id="tally2-count-0">0</span>
+              <span class="tally-pts p2-only" id="tally2-pts-0">0 PTS</span>
+            </div>
+            <div class="tally-row" id="tally-row-1">
+              <span class="tally-pts" id="tally-pts-1">0 PTS</span>
+              <span class="tally-count" id="tally-count-1">0</span>
+              <canvas class="tally-icon" id="tally-icon-1" width="32" height="32"></canvas>
+              <span class="tally-count p2-only" id="tally2-count-1">0</span>
+              <span class="tally-pts p2-only" id="tally2-pts-1">0 PTS</span>
+            </div>
+            <div class="tally-row" id="tally-row-2">
+              <span class="tally-pts" id="tally-pts-2">0 PTS</span>
+              <span class="tally-count" id="tally-count-2">0</span>
+              <canvas class="tally-icon" id="tally-icon-2" width="32" height="32"></canvas>
+              <span class="tally-count p2-only" id="tally2-count-2">0</span>
+              <span class="tally-pts p2-only" id="tally2-pts-2">0 PTS</span>
+            </div>
+            <div class="tally-row" id="tally-row-3">
+              <span class="tally-pts" id="tally-pts-3">0 PTS</span>
+              <span class="tally-count" id="tally-count-3">0</span>
+              <canvas class="tally-icon" id="tally-icon-3" width="32" height="32"></canvas>
+              <span class="tally-count p2-only" id="tally2-count-3">0</span>
+              <span class="tally-pts p2-only" id="tally2-pts-3">0 PTS</span>
+            </div>
+            <div class="tally-total-row">
+              <span>TOTAL</span>
+              <span id="tally-total-kills">0</span>
+              <span class="p2-only" id="tally2-total-kills">0</span>
+            </div>
+          </div>
+          <div id="tally-big" class="tally-big"></div>
+          <div class="tally-next-prompt">▶</div>
+        </div>
+      </div>
+
+      <!-- Right HUD Sidebar (Classic NES Style) -->
+      <aside id="game-sidebar">
+        <div class="hud-section classic-reserve">
+          <div class="enemy-counter-grid" id="enemy-reserve-icons"></div>
+        </div>
+
+        <!-- Conquest: distance travelled -->
+        <div class="hud-section conquest-only">
+          <div class="hud-label mini">ПУТЬ</div>
+          <div id="hud-distance" class="digit">0</div>
+        </div>
+
+        <!-- Player status (III and IV only on the big map) -->
+        <div class="hud-section player-status" id="p1-block">
+          <div class="hud-label p1" id="p1-label">IP</div>
+          <div class="lives-indicator">
+            <span class="tank-symbol p1"></span>
+            <span id="p1-lives" class="digit">3</span>
+          </div>
+          <div class="stars-indicator" id="p1-stars">
+            <span class="star-slot" id="p1-star-1">★</span>
+            <span class="star-slot" id="p1-star-2">★</span>
+            <span class="star-slot" id="p1-star-3">★</span>
+          </div>
+          <div class="score-digit p1 pscore big-only" id="p1-pscore">000000</div>
+        </div>
+
+        <div class="hud-section player-status p2-only" id="p2-block">
+          <div class="hud-label p2" id="p2-label">IIP</div>
+          <div class="lives-indicator">
+            <span class="tank-symbol p2"></span>
+            <span id="p2-lives" class="digit">3</span>
+          </div>
+          <div class="stars-indicator" id="p2-stars">
+            <span class="star-slot" id="p2-star-1">★</span>
+            <span class="star-slot" id="p2-star-2">★</span>
+            <span class="star-slot" id="p2-star-3">★</span>
+          </div>
+          <div class="score-digit p2 pscore big-only" id="p2-pscore">000000</div>
+        </div>
+
+        <div class="hud-section player-status big-only" id="p3-block">
+          <div class="hud-label p3" id="p3-label">IIIP</div>
+          <div class="lives-indicator">
+            <span class="tank-symbol p3"></span>
+            <span id="p3-lives" class="digit">3</span>
+          </div>
+          <div class="stars-indicator" id="p3-stars">
+            <span class="star-slot" id="p3-star-1">★</span>
+            <span class="star-slot" id="p3-star-2">★</span>
+            <span class="star-slot" id="p3-star-3">★</span>
+          </div>
+          <div class="score-digit p3 pscore big-only" id="p3-pscore">000000</div>
+        </div>
+
+        <div class="hud-section player-status big-only" id="p4-block">
+          <div class="hud-label p4" id="p4-label">IVP</div>
+          <div class="lives-indicator">
+            <span class="tank-symbol p4"></span>
+            <span id="p4-lives" class="digit">3</span>
+          </div>
+          <div class="stars-indicator" id="p4-stars">
+            <span class="star-slot" id="p4-star-1">★</span>
+            <span class="star-slot" id="p4-star-2">★</span>
+            <span class="star-slot" id="p4-star-3">★</span>
+          </div>
+          <div class="score-digit p4 pscore big-only" id="p4-pscore">000000</div>
+        </div>
+
+        <!-- Power-up Active Badges -->
+        <div class="hud-section powerups-hud">
+          <div id="active-powerups-list">
+            <div id="badge-boat" class="bonus-badge hidden" title="Лодка">⛵</div>
+            <div id="badge-shovel" class="bonus-badge hidden" title="Стальная база">🧱</div>
+            <div id="badge-clock" class="bonus-badge hidden" title="Враги заморожены">⏱️</div>
+          </div>
+        </div>
+
+        <!-- Stage Level Flag -->
+        <div class="hud-section stage-status">
+          <div class="flag-icon">🚩</div>
+          <div id="stage-number" class="digit stage-digit">1</div>
+        </div>
+
+        <!-- Score display -->
+        <div class="hud-section score-section">
+          <div id="hud-score" class="score-digit classic-only">000000</div>
+          <div id="hud-score2" class="score-digit p2 p2-only classic-only">000000</div>
+          <div class="hud-label mini">HI</div>
+          <div id="hud-hiscore" class="score-digit">020000</div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- On-screen Virtual Mobile / Touch Controls -->
+    <div id="touch-controls">
+      <div id="dpad">
+        <button class="dpad-btn up" data-dir="UP">▲</button>
+        <button class="dpad-btn left" data-dir="LEFT">◀</button>
+        <button class="dpad-btn center">●</button>
+        <button class="dpad-btn right" data-dir="RIGHT">▶</button>
+        <button class="dpad-btn down" data-dir="DOWN">▼</button>
+      </div>
+      <div id="action-buttons">
+        <button id="btn-touch-fire" class="action-btn fire">FIRE</button>
+        <button id="btn-touch-pause" class="action-btn pause">II</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rules & Info Modal Dialog -->
+  <dialog id="modal-rules">
+    <div class="modal-content">
+      <h2>TANK 2026</h2>
+      <div class="modal-body">
+        <h3>УПРАВЛЕНИЕ:</h3>
+        <ul>
+          <li><strong>Клавиши</strong> меняются в SETTINGS (там же сложность и имя)</li>
+          <li><strong>Геймпад:</strong> крестовина / стик — движение, A B X Y RB RT — огонь, START — пауза</li>
+          <li><strong>3-4 PLAYERS:</strong> I и II на клавиатуре, III и IV на геймпадах, большая карта с двумя штабами</li>
+          <li><strong>1 игрок:</strong> WASD / стрелки — движение, ПРОБЕЛ / J / клик — огонь</li>
+          <li><strong>2 игрока — I:</strong> WASD — движение, ПРОБЕЛ / F — огонь</li>
+          <li><strong>2 игрока — II:</strong> стрелки — движение, ENTER / NUM0 / ПРАВЫЙ CTRL — огонь</li>
+          <li><strong>ONLINE:</strong> один нажимает HOST и сообщает код, второй — JOIN и вводит код</li>
+          <li><strong>CONQUEST:</strong> бесконечный поход вверх без штаба. Навстречу едут враги, по пути встречаются города — разрушьте красный штаб, и земля станет вашей. Флаг на панели — число захваченных городов</li>
+          <li><strong>HOST 4:</strong> большая карта с двумя штабами на 2–4 игроков; хост нажимает START, когда все подключились. Потеря любого штаба — GAME OVER</li>
+          <li><strong>P / ESC</strong> — пауза-меню, <strong>M</strong> — звук, <strong>N</strong> — новая карта</li>
+        </ul>
+
+        <h3>TERRAIN:</h3>
+        <ul>
+          <li><strong>BRICK:</strong> Destroyed by standard tank shells.</li>
+          <li><strong>STEEL:</strong> Indestructible (until Tier 4 Star Upgrade!).</li>
+          <li><strong>WATER:</strong> Blocks tanks, but bullets can fly across! (Equip Boat to cross).</li>
+          <li><strong>TREES:</strong> Tanks and bullets pass through; can hide tanks from view!</li>
+          <li><strong>ICE:</strong> Slippery surface with inertia and drifting.</li>
+        </ul>
+
+        <h3>WEAPON UPGRADES:</h3>
+        <ul>
+          <li>⭐ <strong>0 Stars:</strong> Basic cannon, single shell.</li>
+          <li>⭐ <strong>1 Star:</strong> High-velocity shell.</li>
+          <li>⭐⭐ <strong>2 Stars:</strong> Twin-barrel cannons, 2 shells.</li>
+          <li>⭐⭐⭐ <strong>3 Stars:</strong> Destroys STEEL walls and trees.</li>
+        </ul>
+
+        <h3>ENEMIES:</h3>
+        <ul>
+          <li><strong>Basic:</strong> 100 PTS / 1 HP</li>
+          <li><strong>Fast:</strong> 200 PTS / 1 HP</li>
+          <li><strong>Power:</strong> 300 PTS / 1 HP</li>
+          <li><strong>Armor:</strong> 400 PTS / 4 HP</li>
+        </ul>
+
+        <h3>BONUSES:</h3>
+        <ul>
+          <li>⭐ <strong>Star</strong> · 🔫 <strong>Gun</strong> · ⛵ <strong>Boat</strong> · 💣 <strong>Grenade</strong></li>
+          <li>⏱️ <strong>Clock</strong> · 🛡️ <strong>Helmet</strong> · ⛏️ <strong>Shovel</strong> · ❤️ <strong>Tank</strong></li>
+        </ul>
+      </div>
+      <button id="btn-close-rules" class="arcade-btn">CLOSE</button>
+    </div>
+  </dialog>
+
+  <!-- Game Scripts -->
+  <script src="js/audio.js"></script>
+  <script src="js/sprites.js"></script>
+  <script src="js/mapGenerator.js"></script>
+  <script src="js/entities.js"></script>
+  <script src="js/game.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="js/net.js"></script>
+</body>
+</html>
