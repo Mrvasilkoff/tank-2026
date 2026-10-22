@@ -1184,8 +1184,7 @@ canvas#gameCanvas {
   text-align: left;
 }
 
-.game-menu.compact .menu-option:first-child,
-.game-menu.compact .menu-option:nth-last-child(-n + 2) {
+.game-menu.compact .menu-option.wide {
   grid-column: 1 / -1;
 }
 

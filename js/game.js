@@ -755,6 +755,8 @@ class Game {
     this.localBig = false;     // Local 3-4 players on the big map (players III/IV on gamepads)
     this.difficulty = DIFFICULTY[loadJSON('tank2026_difficulty', 'normal')] ? loadJSON('tank2026_difficulty', 'normal') : 'normal';
     this.records = loadJSON('tank2026_records', []);
+    // Conquest special enemies that may appear (switched in SETTINGS)
+    this.enemyTypes = Object.assign({ artillery: true, miner: true, scout: true }, loadJSON('tank2026_enemies', {}));
     this.freshRecords = [];
 
     this.waterTimer = 0;
@@ -1179,9 +1181,9 @@ class Game {
       !(name === 'conquestOver' || (name === 'onlineOver' && this.layout.conquest)));
     document.getElementById('records-table').classList.toggle('hidden', name !== 'records');
     if (name === 'records') this.renderRecords();
-    this.menuItems.forEach(([label, action], i) => {
+    this.menuItems.forEach(([label, action, wide], i) => {
       const btn = document.createElement('button');
-      btn.className = 'menu-option';
+      btn.className = 'menu-option' + (wide ? ' wide' : ''); // wide: full row in the compact settings grid
       btn.innerHTML = '<span class="menu-cursor"></span>' + label;
       btn.addEventListener('mouseenter', () => this.selectMenu(i));
       btn.addEventListener('click', () => {
@@ -1217,7 +1219,15 @@ class Game {
 
   // SETTINGS: difficulty, then the keys of players I and II side by side
   settingsMenuItems() {
-    const items = [['DIFFICULTY: ' + DIFFICULTY[this.difficulty].label, () => this.cycleDifficulty()]];
+    const items = [['DIFFICULTY: ' + DIFFICULTY[this.difficulty].label, () => this.cycleDifficulty(), true]];
+    // Conquest special enemies on / off
+    [['artillery', 'АРТИЛЛЕРИЯ'], ['miner', 'МИНЁРЫ'], ['scout', 'РАЗВЕДКА']].forEach(([type, label], k) => {
+      items.push([label + ': ' + (this.enemyTypes[type] ? 'ВКЛ' : 'ВЫКЛ'), () => {
+        this.enemyTypes[type] = !this.enemyTypes[type];
+        saveJSON('tank2026_enemies', this.enemyTypes);
+        this.showMenu('settings', this.menuIndex);
+      }, k === 2]);
+    });
     KEY_ACTIONS.forEach(action => {
       ['p1', 'p2'].forEach(player => {
         const waiting = this.awaitingKey && this.awaitingKey.player === player && this.awaitingKey.action === action;
@@ -1233,8 +1243,8 @@ class Game {
       applyKeyMap(this.keymap);
       saveJSON('tank2026_keys', this.keymap);
       this.showMenu('settings', this.menuIndex);
-    }]);
-    items.push(['BACK', () => this.showMenu('main', 5)]);
+    }, true]);
+    items.push(['BACK', () => this.showMenu('main', 5), true]);
     return items;
   }
 
@@ -4354,9 +4364,10 @@ class Game {
       // Special conquest tanks appear the further you get
       const roll = Math.random();
       const d = this.distanceRows;
-      if (d > 20 && roll < 0.12) config = { type: 'scout', hp: 1, points: 150, isFlashing: false };
-      else if (d > 30 && roll < 0.22) config = { type: 'artillery', hp: 2, points: 300, isFlashing: false };
-      else if (d > 50 && roll < 0.32) config = { type: 'miner', hp: 1, points: 250, isFlashing: false };
+      const on = this.enemyTypes;
+      if (on.scout && d > 20 && roll < 0.12) config = { type: 'scout', hp: 1, points: 150, isFlashing: false };
+      else if (on.artillery && d > 30 && roll >= 0.12 && roll < 0.22) config = { type: 'artillery', hp: 2, points: 300, isFlashing: false };
+      else if (on.miner && d > 50 && roll >= 0.22 && roll < 0.32) config = { type: 'miner', hp: 1, points: 250, isFlashing: false };
     }
     this.conquestSpawnCount++;
     if (this.conquestSpawnCount % 7 === 0) config.isFlashing = true;
